@@ -326,15 +326,15 @@ func TestLR01_BasicFlow(t *testing.T) {
 		assertFieldEquals(t, payload, "proxy_delay_time", float64(3))
 
 		// --- AI observability fields (configured) ---
-		assertFieldEquals(t, payload, "ai_apikey", "sk-test")
+		assertFieldEquals(t, payload, "ai_apikey_id", "key-id-123")
 		assertFieldObjectArrayEquals(t, payload, "ai_apikeytags", []map[string]interface{}{
 			{"tagname": "dep", "tagvalue": "ops"},
 			{"tagname": "team", "tagvalue": "bfe"},
 		})
 		assertFieldEquals(t, payload, "ai_requested_model", req.GetAiRequestedModel())
-		assertFieldEquals(t, payload, "ai_mapped_model", req.GetAiMappedModel())
+		assertFieldEquals(t, payload, "ai_target_model", req.GetAiTargetModel())
 		assertFieldEquals(t, payload, "ai_stream", true)
-		assertFieldEquals(t, payload, "ai_prompt_tokens", float64(1000))
+		assertFieldEquals(t, payload, "ai_input_tokens", float64(1000))
 		assertFieldEquals(t, payload, "ai_output_tokens", float64(200))
 		assertFieldEquals(t, payload, "ai_total_tokens", float64(1200))
 		assertFieldEquals(t, payload, "ai_ttft_us", float64(50000))
@@ -348,6 +348,24 @@ func TestLR01_BasicFlow(t *testing.T) {
 		})
 		assertFieldEquals(t, payload, "ai_auth_reject_reason", "quota_exceeded")
 		assertFieldStringSliceEquals(t, payload, "ai_auth_reject_quota_plans", []string{"plan-A", "plan-B"})
+		assertFieldEquals(t, payload, "ai_provider", "openai")
+		assertFieldEquals(t, payload, "ai_retry_count", float64(1))
+		assertFieldEquals(t, payload, "ai_cost_value", float64(5000))
+		assertFieldEquals(t, payload, "ai_cost_currency", "USD")
+		assertFieldObjectArrayEquals(t, payload, "ai_route_rule_hits", []map[string]interface{}{
+			{
+				"rule_owner":      "ak_user_a",
+				"rule_owner_type": "apikey",
+				"rule_name":       "user_a-rule1",
+			},
+		})
+		assertFieldObjectArrayEquals(t, payload, "ai_cluster_key_names", []map[string]interface{}{
+			{
+				"cluster_name": "cluster-a",
+				"key_name":     "key-001",
+			},
+		})
+		assertFieldStringSliceEquals(t, payload, "ai_auth_hit_quota_plans", []string{"hit-plan-A", "hit-plan-B"})
 
 		// Non-required, non-configured fields should NOT be emitted.
 		assertFieldAbsent(t, payload, "req_num")
@@ -364,6 +382,9 @@ func TestLR01_BasicFlow(t *testing.T) {
 		assertFieldAbsent(t, payload, "sock_src_ip")
 		assertFieldAbsent(t, payload, "vip")
 		assertFieldAbsent(t, payload, "vip6")
+		assertFieldAbsent(t, payload, "ai_apikey")
+		assertFieldAbsent(t, payload, "ai_mapped_model")
+		assertFieldAbsent(t, payload, "ai_prompt_tokens")
 	}
 }
 
@@ -518,7 +539,7 @@ func TestLR01_RequireFieldMode(t *testing.T) {
 
 	// Non-required fields should be absent.
 	assertFieldAbsent(t, payload, "ai_requested_model")
-	assertFieldAbsent(t, payload, "ai_mapped_model")
+	assertFieldAbsent(t, payload, "ai_target_model")
 	assertFieldAbsent(t, payload, "req_num")
 	assertFieldAbsent(t, payload, "session_id")
 	assertFieldAbsent(t, payload, "user_agent")

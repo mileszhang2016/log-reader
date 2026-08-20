@@ -137,12 +137,12 @@
 
 | JSON 字段 | 类型 | Required | Default | 说明 |
 |-----------|------|----------|---------|------|
-| `ai_apikey` | string | ❌ | ✅ | AI API Key |
+| `ai_apikey_id` | string | ❌ | ✅ | API Key 内部标识 |
 | `ai_apikeytags` | []object | ❌ | ✅ | API Key 标签列表，每项为 `{"tagname": "...", "tagvalue": "..."}` |
 | `ai_requested_model` | string | ❌ | ✅ | 客户端请求的模型名称 |
-| `ai_mapped_model` | string | ❌ | ✅ | 路由映射后的实际模型名称 |
+| `ai_target_model` | string | ❌ | ✅ | 实际路由目标模型名 |
 | `ai_stream` | bool | ❌ | ✅ | 是否为流式请求 |
-| `ai_prompt_tokens` | int64 | ❌ | ✅ | Prompt 消耗 Token 数 |
+| `ai_input_tokens` | int64 | ❌ | ✅ | 输入 Token 数 |
 | `ai_output_tokens` | int64 | ❌ | ✅ | 输出消耗 Token 数（限流时可能为 -1） |
 | `ai_total_tokens` | int64 | ❌ | ✅ | 总消耗 Token 数 |
 | `ai_ttft_us` | int64 | ❌ | ✅ | 首 Token 延迟（微秒），Time To First Token |
@@ -150,6 +150,13 @@
 | `ai_rate_limit_hits` | []object | ❌ | ✅ | 限流命中记录，每项为 `{"rate_limit_policy_id": "...", "rate_limit_type": "...", "rule_names": [...]}` |
 | `ai_auth_reject_reason` | string | ❌ | ✅ | 认证/鉴权拒绝原因 |
 | `ai_auth_reject_quota_plans` | []string | ❌ | ✅ | 被拒绝的配额计划（quota plan）名称列表 |
+| `ai_provider` | string | ❌ | ✅ | 上游模型提供商 |
+| `ai_retry_count` | uint32 | ❌ | ✅ | 模型调用层重试次数 |
+| `ai_cost_value` | int64 | ❌ | ✅ | 成本固定点整数值 |
+| `ai_cost_currency` | string | ❌ | ✅ | 成本币种 |
+| `ai_route_rule_hits` | []object | ❌ | ✅ | AI 路由规则命中记录 |
+| `ai_cluster_key_names` | []object | ❌ | ✅ | 尝试过的 cluster 与 key 名称组合 |
+| `ai_auth_hit_quota_plans` | []string | ❌ | ✅ | 成功请求时命中的配额计划名称列表 |
 
 ### 3.12. 地址信息字段（从 ConnAddrInfo 展平）
 
@@ -177,9 +184,9 @@
 | 响应信息 | 6 | 3 | 4 |
 | 响应头列表 | 1 | 0 | 0 |
 | 时间信息 | 8 | 5 | 6 |
-| AI 可观测 | 13 | 0 | 13 |
+| AI 可观测 | 20 | 0 | 20 |
 | 地址信息 | 5 | 0 | 1 |
-| **总计** | **66** | **22** | **46** |
+| **总计** | **73** | **22** | **53** |
 
 ---
 
@@ -217,7 +224,38 @@
 | `rate_limit_type` | string | 限流类型（如 `tpm`、`rpm`） |
 | `rule_names` | []string | 命中的规则名称列表 |
 
-### 5.3. req_headers / res_headers（[]object）
+### 5.3. ai_route_rule_hits（[]object）
+
+```json
+[
+    {
+        "rule_owner": "ak_user_a",
+        "rule_owner_type": "apikey",
+        "rule_name": "user_a-rule1"
+    }
+]
+```
+
+| 子字段 | 类型 | 说明 |
+|--------|------|------|
+| `rule_owner` | string | 路由表 owner |
+| `rule_owner_type` | string | 路由表类型（如 `apikey`、`entity`、`global`） |
+| `rule_name` | string | 规则名称 |
+
+### 5.4. ai_cluster_key_names（[]object）
+
+```json
+[
+    {"cluster_name": "cluster-a", "key_name": "key-001"}
+]
+```
+
+| 子字段 | 类型 | 说明 |
+|--------|------|------|
+| `cluster_name` | string | 集群名称 |
+| `key_name` | string | API Key 名称/标识 |
+
+### 5.5. req_headers / res_headers（[]object）
 
 ```json
 [
@@ -247,12 +285,12 @@ FieldMode = default
 ```ini
 [ConfFields]
 FieldMode = customized
-FieldNames = ai_apikey
+FieldNames = ai_apikey_id
 FieldNames = ai_apikeytags
 FieldNames = ai_requested_model
-FieldNames = ai_mapped_model
+FieldNames = ai_target_model
 FieldNames = ai_stream
-FieldNames = ai_prompt_tokens
+FieldNames = ai_input_tokens
 FieldNames = ai_output_tokens
 FieldNames = ai_total_tokens
 FieldNames = ai_ttft_us

@@ -105,16 +105,25 @@ func TestResolveFields_Customized(t *testing.T) {
 	cfg := &KafkaDataConfig{
 		ConfFields: ConfKafkaFields{
 			FieldMode:  "customized",
-			FieldNames: []string{"ai_apikey", "ai_requested_model", "referrer"},
+			FieldNames: []string{"ai_apikey_id", "ai_requested_model", "ai_target_model", "ai_input_tokens", "ai_provider", "referrer"},
 		},
 	}
 	of := cfg.ResolveFields()
 
-	if !of.Set["ai_apikey"] {
-		t.Error("expected ai_apikey in output")
+	if !of.Set["ai_apikey_id"] {
+		t.Error("expected ai_apikey_id in output")
 	}
 	if !of.Set["ai_requested_model"] {
 		t.Error("expected ai_requested_model in output")
+	}
+	if !of.Set["ai_target_model"] {
+		t.Error("expected ai_target_model in output")
+	}
+	if !of.Set["ai_input_tokens"] {
+		t.Error("expected ai_input_tokens in output")
+	}
+	if !of.Set["ai_provider"] {
+		t.Error("expected ai_provider in output")
 	}
 	if !of.Set["referrer"] {
 		t.Error("expected referrer in output")
@@ -149,21 +158,21 @@ func TestResolveFields_DuplicateNames(t *testing.T) {
 	cfg := &KafkaDataConfig{
 		ConfFields: ConfKafkaFields{
 			FieldMode:  "customized",
-			FieldNames: []string{"ai_apikey", "ai_apikey", "ai_apikey"},
+			FieldNames: []string{"ai_apikey_id", "ai_apikey_id", "ai_apikey_id"},
 		},
 	}
 	of := cfg.ResolveFields()
 	count := 0
 	for _, name := range RequiredFields() {
-		if name == "ai_apikey" {
+		if name == "ai_apikey_id" {
 			continue
 		}
 		if of.Set[name] {
 			count++
 		}
 	}
-	if !of.Set["ai_apikey"] {
-		t.Error("ai_apikey should be in output")
+	if !of.Set["ai_apikey_id"] {
+		t.Error("ai_apikey_id should be in output")
 	}
 }
 
@@ -184,12 +193,12 @@ func TestResolveFields_UnknownFieldName(t *testing.T) {
 	cfg := &KafkaDataConfig{
 		ConfFields: ConfKafkaFields{
 			FieldMode:  "customized",
-			FieldNames: []string{"ai_apikey", "nonexistent_field", "another_fake"},
+			FieldNames: []string{"ai_apikey_id", "nonexistent_field", "another_fake"},
 		},
 	}
 	of := cfg.ResolveFields()
-	if !of.Set["ai_apikey"] {
-		t.Error("ai_apikey should be in output")
+	if !of.Set["ai_apikey_id"] {
+		t.Error("ai_apikey_id should be in output")
 	}
 	if of.Set["nonexistent_field"] {
 		t.Error("nonexistent_field should not be in output")

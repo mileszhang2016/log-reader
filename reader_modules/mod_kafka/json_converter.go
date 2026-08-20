@@ -33,6 +33,19 @@ type AiRateLimitHitJSON struct {
 	RuleNames         []string `json:"rule_names"`
 }
 
+// AIRouteRuleHitJSON AI routing rule hit record
+type AIRouteRuleHitJSON struct {
+	RuleOwner     string `json:"rule_owner"`
+	RuleOwnerType string `json:"rule_owner_type"`
+	RuleName      string `json:"rule_name"`
+}
+
+// ClusterKeyNameJSON cluster and key name pair
+type ClusterKeyNameJSON struct {
+	ClusterName string `json:"cluster_name"`
+	KeyName     string `json:"key_name"`
+}
+
 // HttpHeaderJSON HTTP request or response header
 type HttpHeaderJSON struct {
 	Key   string `json:"key"`

@@ -56,7 +56,7 @@ LR01 基本流程与 JSON 转换正确性
 - `MockKafka` 收到 1 条消息。
 - 消息包含全部 22 个必需字段：
   `logid`、`timestamp`、`product`、`hostid`、`client_ip`、`err_code`、`err_msg`、`req_header_len`、`req_body_len`、`proto`、`header_host`、`origin_uri`、`method`、`res_status_code`、`res_header_len`、`res_body_len`、`all_time`、`read_client_time`、`cluster_serve_time`、`backend_serve_time`、`write_client_time`、`proxy_delay_time`。
-- 非必需字段不存在，例如：`ai_requested_model`、`ai_mapped_model`、`req_num`、`session_id`、`user_agent`、`cookie`、`res_location`、`log_tag`、`bfe_ip`、`vip`。
+- 非必需字段不存在，例如：`ai_requested_model`、`ai_target_model`、`ai_input_tokens`、`ai_apikey_id`、`req_num`、`session_id`、`user_agent`、`cookie`、`res_location`、`log_tag`、`bfe_ip`、`vip`。
 
 ## 清理
 

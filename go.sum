@@ -1,9 +1,3 @@
-github.com/baidu/go-lib v0.0.0-20200819072111-21df249f5e6a h1:m/u39GNhkoUSC9WxTuM5hWShEqEfVioeXDiqiQd6tKg=
-github.com/baidu/go-lib v0.0.0-20200819072111-21df249f5e6a/go.mod h1:FneHDqz3wLeDGdWfRyW4CzBbCwaqesLGIFb09N80/ww=
-github.com/bfenetworks/bfe v1.8.3 h1:4oPkQszaoNuOTUJYHxJrcljC/spU98Fc8YE4BLsOQ9s=
-github.com/bfenetworks/bfe v1.8.3/go.mod h1:1qj3KdDu/Gs5HpBTrskGYy9DnzuPJKMYU+WfUlAlvsc=
-github.com/bfenetworks/bfe-access-pb v0.1.0 h1:wVFgWNIiU06v7UkycZ+1IIlUBtn4zAhrjLqLbgNzrDU=
-github.com/bfenetworks/bfe-access-pb v0.1.0/go.mod h1:XZVAEiVf88PQqSHncZFFvUEK9ZdN1aaiuugRHTIBgNo=
 github.com/bfenetworks/go-lib v0.0.3 h1:504FrMW0qTKTODuUgkVGCy6DORBdZOgC78zGD9LwpKU=
 github.com/bfenetworks/go-lib v0.0.3/go.mod h1:DNiKiff30CaX7uOUGJpP85VyTn+JSFoY9gfG2AxmPgM=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

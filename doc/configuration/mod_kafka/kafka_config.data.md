@@ -126,12 +126,12 @@
 
 | 字段名 | 类型 | 含义 | 必需 | 默认 |
 | ------ | ---- | ---- | ---- | ---- |
-| ai_apikey | string | AI API Key | N | Y |
+| ai_apikey_id | string | API Key 内部标识 | N | Y |
 | ai_apikeytags | []object | API Key 标签列表 | N | Y |
 | ai_requested_model | string | 请求模型 | N | Y |
-| ai_mapped_model | string | 映射后模型 | N | Y |
+| ai_target_model | string | 实际路由目标模型名 | N | Y |
 | ai_stream | bool | 是否流式请求 | N | Y |
-| ai_prompt_tokens | int64 | Prompt Token 数 | N | Y |
+| ai_input_tokens | int64 | 输入 Token 数 | N | Y |
 | ai_output_tokens | int64 | 输出 Token 数 | N | Y |
 | ai_total_tokens | int64 | 总 Token 数 | N | Y |
 | ai_ttft_us | int64 | 首 Token 延迟（微秒） | N | Y |
@@ -139,6 +139,13 @@
 | ai_rate_limit_hits | []object | 限流命中记录 | N | Y |
 | ai_auth_reject_reason | string | 认证拒绝原因 | N | Y |
 | ai_auth_reject_quota_plans | []string | 认证拒绝时超限的配额计划 | N | Y |
+| ai_provider | string | 上游模型提供商 | N | Y |
+| ai_retry_count | uint32 | 模型调用层重试次数 | N | Y |
+| ai_cost_value | int64 | 成本固定点整数值 | N | Y |
+| ai_cost_currency | string | 成本币种 | N | Y |
+| ai_route_rule_hits | []object | AI 路由规则命中记录 | N | Y |
+| ai_cluster_key_names | []object | 尝试过的 cluster 与 key 名称组合 | N | Y |
+| ai_auth_hit_quota_plans | []string | 成功请求时命中的配额计划 | N | Y |
 
 ### 地址信息字段
 
@@ -179,6 +186,6 @@ FieldNames= client_ip
 FieldNames= err_code
 FieldNames= res_status_code
 FieldNames= ai_requested_model
-FieldNames= ai_prompt_tokens
+FieldNames= ai_input_tokens
 FieldNames= ai_total_tokens
 ```

@@ -48,7 +48,7 @@ go test ./tests/integration/implementation/scenario-LR01-basic-flow/ -run TestLR
 
 | 场景 | 说明 |
 |------|------|
-| LR01 基本流程 | 验证 log-reader 读取 protobuf 日志、按 `conf/mod_kafka/kafka_config.data` 中开启的 48 个字段输出 JSON 到 Kafka，并逐字段（含 AI 对象数组与字符串数组）验证 JSON 内容与输入 protobuf 一致 |
+| LR01 基本流程 | 验证 log-reader 读取 protobuf 日志、按 `conf/mod_kafka/kafka_config.data` 中开启的 55 个字段输出 JSON 到 Kafka，并逐字段（含 AI 对象数组与字符串数组）验证 JSON 内容与输入 protobuf 一致 |
 | LR01 批次拆分 | 验证日志数量超过 `MaxSizePerBatch` 时，模块能正确拆分批次处理，且不丢失/不错误转换字段内容 |
 | LR01 Customized 字段模式 | 验证 `customized` 模式自动包含必需字段 |
 | LR01 Default 字段模式 | 验证 `default` 模式输出默认字段集 |

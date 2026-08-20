@@ -179,6 +179,10 @@ func isZeroSlice(v interface{}) bool {
 		return len(s) == 0
 	case []AiRateLimitHitJSON:
 		return len(s) == 0
+	case []AIRouteRuleHitJSON:
+		return len(s) == 0
+	case []ClusterKeyNameJSON:
+		return len(s) == 0
 	case []HttpHeaderJSON:
 		return len(s) == 0
 	case []string:
@@ -648,10 +652,10 @@ func registerAllFields() {
 	)
 
 	// === AI observability fields ===
-	registerField("ai_apikey", "string", false, true,
+	registerField("ai_apikey_id", "string", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
-				return reqLog.GetAiApikey()
+				return reqLog.GetAiApikeyId()
 			}
 			return ""
 		},
@@ -686,10 +690,10 @@ func registerAllFields() {
 		isZeroString,
 	)
 
-	registerField("ai_mapped_model", "string", false, true,
+	registerField("ai_target_model", "string", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
-				return reqLog.GetAiMappedModel()
+				return reqLog.GetAiTargetModel()
 			}
 			return ""
 		},
@@ -706,10 +710,10 @@ func registerAllFields() {
 		isZeroBool,
 	)
 
-	registerField("ai_prompt_tokens", "int64", false, true,
+	registerField("ai_input_tokens", "int64", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
-				return reqLog.GetAiPromptTokens()
+				return reqLog.GetAiInputTokens()
 			}
 			return int64(0)
 		},
@@ -783,6 +787,88 @@ func registerAllFields() {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
 				qls := reqLog.GetAiAuthRejectQuotaPlans()
 				return qls
+			}
+			return []string{}
+		},
+		isZeroSlice,
+	)
+
+	// === AI observability new fields (v0.2.0) ===
+	registerField("ai_provider", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiProvider()
+			}
+			return ""
+		},
+		isZeroString,
+	)
+	registerField("ai_retry_count", "uint32", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiRetryCount()
+			}
+			return uint32(0)
+		},
+		isZeroUint32,
+	)
+	registerField("ai_cost_value", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiCostValue()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_cost_currency", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiCostCurrency()
+			}
+			return ""
+		},
+		isZeroString,
+	)
+	registerField("ai_route_rule_hits", "[]object", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				hits := reqLog.GetAiRouteRuleHits()
+				result := make([]AIRouteRuleHitJSON, 0, len(hits))
+				for _, h := range hits {
+					result = append(result, AIRouteRuleHitJSON{
+						RuleOwner:     h.GetRuleOwner(),
+						RuleOwnerType: h.GetRuleOwnerType(),
+						RuleName:      h.GetRuleName(),
+					})
+				}
+				return result
+			}
+			return []AIRouteRuleHitJSON{}
+		},
+		isZeroSlice,
+	)
+	registerField("ai_cluster_key_names", "[]object", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				pairs := reqLog.GetAiClusterKeyNames()
+				result := make([]ClusterKeyNameJSON, 0, len(pairs))
+				for _, p := range pairs {
+					result = append(result, ClusterKeyNameJSON{
+						ClusterName: p.GetClusterName(),
+						KeyName:     p.GetKeyName(),
+					})
+				}
+				return result
+			}
+			return []ClusterKeyNameJSON{}
+		},
+		isZeroSlice,
+	)
+	registerField("ai_auth_hit_quota_plans", "[]string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiAuthHitQuotaPlans()
 			}
 			return []string{}
 		},

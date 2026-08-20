@@ -152,12 +152,12 @@ FieldNames= backend_serve_time
 FieldNames= write_client_time
 FieldNames= connect_backend_time
 FieldNames= proxy_delay_time
-FieldNames= ai_apikey
-FieldNames= ai_apikeytags
+FieldNames= ai_apikey_id
+FieldNames= ai_apikey_idtags
 FieldNames= ai_requested_model
-FieldNames= ai_mapped_model
+FieldNames= ai_target_model
 FieldNames= ai_stream
-FieldNames= ai_prompt_tokens
+FieldNames= ai_input_tokens
 FieldNames= ai_output_tokens
 FieldNames= ai_total_tokens
 FieldNames= ai_ttft_us
@@ -204,16 +204,16 @@ LogReader 将 PB 日志转换为如下 JSON 格式发送到 Kafka：
     "write_client_time": 40033,
     "connect_backend_time": 1,
     "proxy_delay_time": 3,
-    "ai_apikey": "YOURAPIKEY",
-    "ai_apikeytags": [
+    "ai_apikey_id": "YOURAPIKEY",
+    "ai_apikey_idtags": [
         {"tagname": "dep0", "tagvalue": "rd"},
         {"tagname": "dep2", "tagvalue": "teama"},
         {"tagname": "dep3", "tagvalue": "yyx"}
     ],
     "ai_requested_model": "test-model",
-    "ai_mapped_model": "gpt-5",
+    "ai_target_model": "gpt-5",
     "ai_stream": true,
-    "ai_prompt_tokens": 61,
+    "ai_input_tokens": 61,
     "ai_output_tokens": 485,
     "ai_total_tokens": 546,
     "ai_ttft_us": 3922,
@@ -246,14 +246,14 @@ LogReader 将 PB 日志转换为如下 JSON 格式发送到 Kafka：
     "all_time": 4,
     "proxy_delay_time": 3,
     "err_code": "AI_RATE_LIMIT",
-    "ai_apikey": "YOURAPIKEY",
-    "ai_apikeytags": [
+    "ai_apikey_id": "YOURAPIKEY",
+    "ai_apikey_idtags": [
         {"tagname": "dep", "tagvalue": "op"},
         {"tagname": "team", "tagvalue": "bfe"}
     ],
     "ai_requested_model": "test-model",
-    "ai_mapped_model": "gpt-5",
-    "ai_prompt_tokens": 61,
+    "ai_target_model": "gpt-5",
+    "ai_input_tokens": 61,
     "ai_output_tokens": -1,
     "ai_rate_limit_hits": [
         {
@@ -290,7 +290,7 @@ LogReader 将 PB 日志转换为如下 JSON 格式发送到 Kafka：
     "proxy_delay_time": 1,
     "err_code": "AI_AUTH_REJECT",
     "err_msg": "invalid api key",
-    "ai_apikey": "invalid-key",
+    "ai_apikey_id": "invalid-key",
     "ai_auth_reject_reason": "apikey not found",
     "ai_auth_reject_quota_plans": ["plan_basic", "plan_pro"]
 }
@@ -383,7 +383,7 @@ USE bfe_observability;
 CREATE TABLE bfe_ai_request_log (
     hostid                  VARCHAR(256)    COMMENT '主机标识，格式 hostname_netns',
     log_time                DATETIME        COMMENT '日志产生时间',
-    ai_apikey               VARCHAR(256)    COMMENT 'API Key',
+    ai_apikey_id               VARCHAR(256)    COMMENT 'API Key',
     ai_requested_model      VARCHAR(128)    COMMENT '请求模型名',
 
     logid                   BIGINT          COMMENT 'BFE 请求唯一标识',
@@ -433,13 +433,13 @@ CREATE TABLE bfe_ai_request_log (
     proxy_delay_time        INT             COMMENT '代理延迟',
 
     -- AI 可观测
-    ai_apikeytags           ARRAY<STRUCT<
+    ai_apikey_idtags           ARRAY<STRUCT<
         tagname  : VARCHAR(128),
         tagvalue : VARCHAR(128)
     >>                                      COMMENT 'API Key 标签列表',
-    ai_mapped_model         VARCHAR(128)    COMMENT '实际路由模型名',
+    ai_target_model         VARCHAR(128)    COMMENT '实际路由模型名',
     ai_stream               TINYINT         COMMENT '是否流式：0=非流式, 1=流式',
-    ai_prompt_tokens        BIGINT          COMMENT '输入 Token 数',
+    ai_input_tokens        BIGINT          COMMENT '输入 Token 数',
     ai_output_tokens        BIGINT          COMMENT '输出 Token 数',
     ai_total_tokens         BIGINT          COMMENT '总 Token 数',
     ai_ttft_us              BIGINT          COMMENT '首 Token 延迟 TTFT（微秒）',
@@ -452,11 +452,11 @@ CREATE TABLE bfe_ai_request_log (
     ai_auth_reject_reason   VARCHAR(256)    COMMENT '认证拒绝原因',
     ai_auth_reject_quota_plans ARRAY<VARCHAR(128)> COMMENT '被拒绝的配额计划'
 )
-UNIQUE KEY(hostid, log_time, ai_apikey, ai_requested_model)
+UNIQUE KEY(hostid, log_time, ai_apikey_id, ai_requested_model)
 PARTITION BY RANGE(log_time) (
     PARTITION p_init VALUES LESS THAN ('2026-07-10')
 )
-DISTRIBUTED BY HASH(ai_apikey) BUCKETS 32
+DISTRIBUTED BY HASH(ai_apikey_id) BUCKETS 32
 PROPERTIES (
     "replication_num" = "1",
     "dynamic_partition.enable" = "true",
@@ -512,12 +512,12 @@ COLUMNS(
     write_client_time,
     connect_backend_time,
     proxy_delay_time,
-    ai_apikey,
-    ai_apikeytags,
+    ai_apikey_id,
+    ai_apikey_idtags,
     ai_requested_model,
-    ai_mapped_model,
+    ai_target_model,
     ai_stream,
-    ai_prompt_tokens,
+    ai_input_tokens,
     ai_output_tokens,
     ai_total_tokens,
     ai_ttft_us,
@@ -551,9 +551,9 @@ FROM KAFKA (
 CREATE TABLE bfe_ai_metrics_1m (
     ts_min             DATETIME        COMMENT '分钟时间桶',
     hostid             VARCHAR(256)    COMMENT '主机标识',
-    ai_apikey          VARCHAR(128)    COMMENT 'API Key',
+    ai_apikey_id          VARCHAR(128)    COMMENT 'API Key',
     ai_requested_model VARCHAR(128)    COMMENT '请求模型',
-    ai_mapped_model    VARCHAR(128)    COMMENT '路由模型',
+    ai_target_model    VARCHAR(128)    COMMENT '路由模型',
     ai_stream          TINYINT         COMMENT '流式标识',
     product            VARCHAR(64)     COMMENT '产品线',
     cluster            VARCHAR(64)     COMMENT '集群',
@@ -602,7 +602,7 @@ CREATE TABLE bfe_ai_metrics_1m (
     cluster_serve_sum  BIGINT   SUM    COMMENT '集群层耗时累计',
     backend_serve_sum  BIGINT   SUM    COMMENT '后端耗时累计'
 )
-AGGREGATE KEY(ts_min, hostid, ai_apikey, ai_requested_model, ai_mapped_model, ai_stream,
+AGGREGATE KEY(ts_min, hostid, ai_apikey_id, ai_requested_model, ai_target_model, ai_stream,
               product, cluster, sub_cluster, backend_info, method, res_status_code,
               err_code, header_host,
               tagslot1name, tagslot1value, tagslot2name, tagslot2value,
@@ -616,7 +616,7 @@ AGGREGATE KEY(ts_min, hostid, ai_apikey, ai_requested_model, ai_mapped_model, ai
 PARTITION BY RANGE(ts_min) (
     PARTITION p_init VALUES LESS THAN ('2026-07-10')
 )
-DISTRIBUTED BY HASH(ai_apikey) BUCKETS 16
+DISTRIBUTED BY HASH(ai_apikey_id) BUCKETS 16
 PROPERTIES (
     "replication_num" = "1",
     "dynamic_partition.enable" = "true",
@@ -641,9 +641,9 @@ INSERT INTO bfe_ai_metrics_1m
 SELECT
     DATE_TRUNC(log_time, 'minute')       AS ts_min,
     COALESCE(hostid, '')                 AS hostid,
-    COALESCE(ai_apikey, '')              AS ai_apikey,
+    COALESCE(ai_apikey_id, '')              AS ai_apikey_id,
     COALESCE(ai_requested_model, '')     AS ai_requested_model,
-    COALESCE(ai_mapped_model, '')        AS ai_mapped_model,
+    COALESCE(ai_target_model, '')        AS ai_target_model,
     COALESCE(ai_stream, 0)               AS ai_stream,
     COALESCE(product, '')                AS product,
     COALESCE(cluster, '')                AS cluster,
@@ -653,16 +653,16 @@ SELECT
     COALESCE(res_status_code, 0)         AS res_status_code,
     COALESCE(err_code, '')               AS err_code,
     COALESCE(header_host, '')            AS header_host,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 1).tagname, '')  AS tagslot1name,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 1).tagvalue, '') AS tagslot1value,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 2).tagname, '')  AS tagslot2name,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 2).tagvalue, '') AS tagslot2value,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 3).tagname, '')  AS tagslot3name,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 3).tagvalue, '') AS tagslot3value,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 4).tagname, '')  AS tagslot4name,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 4).tagvalue, '') AS tagslot4value,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 5).tagname, '')  AS tagslot5name,
-    COALESCE(ELEMENT_AT(ai_apikeytags, 5).tagvalue, '') AS tagslot5value,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 1).tagname, '')  AS tagslot1name,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 1).tagvalue, '') AS tagslot1value,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 2).tagname, '')  AS tagslot2name,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 2).tagvalue, '') AS tagslot2value,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 3).tagname, '')  AS tagslot3name,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 3).tagvalue, '') AS tagslot3value,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 4).tagname, '')  AS tagslot4name,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 4).tagvalue, '') AS tagslot4value,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 5).tagname, '')  AS tagslot5name,
+    COALESCE(ELEMENT_AT(ai_apikey_idtags, 5).tagvalue, '') AS tagslot5value,
     COALESCE(ELEMENT_AT(ai_rate_limit_hits, 1).rate_limit_policy_id, '') AS rate_limit_policy_id,
     COALESCE(ELEMENT_AT(ai_rate_limit_hits, 1).rate_limit_type, '')      AS rate_limit_type,
     COALESCE(ELEMENT_AT(ELEMENT_AT(ai_rate_limit_hits, 1).rule_names, 1), '') AS rate_limit_rule_name,
@@ -676,7 +676,7 @@ SELECT
     COUNT(1)                             AS request_count,
     SUM(CASE WHEN err_code != '' AND err_code IS NOT NULL THEN 1 ELSE 0 END) AS error_count,
     SUM(CASE WHEN ai_auth_reject_reason != '' AND ai_auth_reject_reason IS NOT NULL THEN 1 ELSE 0 END) AS auth_reject_count,
-    SUM(COALESCE(ai_prompt_tokens, 0))   AS prompt_tokens,
+    SUM(COALESCE(ai_input_tokens, 0))   AS prompt_tokens,
     SUM(COALESCE(ai_output_tokens, 0))   AS output_tokens,
     SUM(COALESCE(ai_total_tokens, 0))    AS total_tokens,
     SUM(COALESCE(ai_ttft_us, 0))         AS ttft_us_sum,
@@ -693,7 +693,7 @@ SELECT
 FROM bfe_ai_request_log
 WHERE log_time >= DATE_TRUNC(NOW(), 'minute') - INTERVAL 1 MINUTE
   AND log_time <  DATE_TRUNC(NOW(), 'minute')
-GROUP BY ts_min, hostid, ai_apikey, ai_requested_model, ai_mapped_model, ai_stream,
+GROUP BY ts_min, hostid, ai_apikey_id, ai_requested_model, ai_target_model, ai_stream,
          product, cluster, sub_cluster, backend_info, method, res_status_code,
          err_code, header_host,
          tagslot1name, tagslot1value, tagslot2name, tagslot2value,
@@ -739,9 +739,9 @@ Grafana 通过 **MySQL 数据源**连接 Doris FE（Doris 兼容 MySQL 协议）
 
 | 变量名 | 类型 | 标签 | 查询 SQL |
 |--------|------|------|----------|
-| `model` | Query | 模型 | `SELECT DISTINCT ai_mapped_model FROM bfe_ai_metrics_1m WHERE ts_min >= NOW() - INTERVAL 1 HOUR` |
+| `model` | Query | 模型 | `SELECT DISTINCT ai_target_model FROM bfe_ai_metrics_1m WHERE ts_min >= NOW() - INTERVAL 1 HOUR` |
 | `hostid` | Query | 主机 | `SELECT DISTINCT hostid FROM bfe_ai_request_log WHERE log_time >= NOW() - INTERVAL 1 HOUR` |
-| `apikey` | Query | API Key | `SELECT DISTINCT ai_apikey FROM bfe_ai_metrics_1m WHERE ts_min >= NOW() - INTERVAL 1 HOUR` |
+| `apikey` | Query | API Key | `SELECT DISTINCT ai_apikey_id FROM bfe_ai_metrics_1m WHERE ts_min >= NOW() - INTERVAL 1 HOUR` |
 | `cluster` | Query | 集群 | `SELECT DISTINCT cluster FROM bfe_ai_metrics_1m WHERE ts_min >= NOW() - INTERVAL 1 HOUR` |
 | `product` | Query | 产品 | `SELECT DISTINCT product FROM bfe_ai_metrics_1m WHERE ts_min >= NOW() - INTERVAL 1 HOUR` |
 | `host` | Query | Host | `SELECT DISTINCT header_host FROM bfe_ai_metrics_1m WHERE ts_min >= NOW() - INTERVAL 1 HOUR AND header_host != ''` |
@@ -800,7 +800,7 @@ SELECT
   SUM(request_count) / 60 AS qps
 FROM bfe_ai_metrics_1m
 WHERE ts_min >= $__timeFrom() AND ts_min < $__timeTo()
-  AND ai_mapped_model IN ($model)
+  AND ai_target_model IN ($model)
   AND product IN ($product)
 GROUP BY ts_min
 ORDER BY ts_min;
@@ -814,7 +814,7 @@ SELECT
   SUM(error_count) / SUM(request_count) AS error_rate
 FROM bfe_ai_metrics_1m
 WHERE ts_min >= $__timeFrom() AND ts_min < $__timeTo()
-  AND ai_mapped_model IN ($model)
+  AND ai_target_model IN ($model)
 GROUP BY ts_min
 ORDER BY ts_min;
 ```
@@ -827,7 +827,7 @@ SELECT
   SUM(total_tokens) AS tokens_per_minute
 FROM bfe_ai_metrics_1m
 WHERE ts_min >= $__timeFrom() AND ts_min < $__timeTo()
-  AND ai_mapped_model IN ($model)
+  AND ai_target_model IN ($model)
 GROUP BY ts_min
 ORDER BY ts_min;
 ```
@@ -842,7 +842,7 @@ SELECT
   PERCENTILE_APPROX(all_time, 0.99) AS p99
 FROM bfe_ai_request_log
 WHERE log_time >= $__timeFrom() AND log_time < $__timeTo()
-  AND ai_mapped_model IN ($model)
+  AND ai_target_model IN ($model)
   AND all_time IS NOT NULL
 GROUP BY time
 ORDER BY time;
@@ -859,7 +859,7 @@ SELECT
 FROM bfe_ai_request_log
 WHERE log_time >= $__timeFrom() AND log_time < $__timeTo()
   AND ai_stream = 1
-  AND ai_mapped_model IN ($model)
+  AND ai_target_model IN ($model)
   AND ai_ttft_us IS NOT NULL
 GROUP BY time
 ORDER BY time;
@@ -869,11 +869,11 @@ ORDER BY time;
 
 ```sql
 SELECT
-  ai_mapped_model AS model,
+  ai_target_model AS model,
   SUM(request_count) / (($__timeTo() - $__timeFrom()) / 1000) AS avg_qps
 FROM bfe_ai_metrics_1m
 WHERE ts_min >= $__timeFrom() AND ts_min < $__timeTo()
-GROUP BY ai_mapped_model
+GROUP BY ai_target_model
 ORDER BY avg_qps DESC
 LIMIT 10;
 ```
@@ -882,12 +882,12 @@ LIMIT 10;
 
 ```sql
 SELECT
-  ai_apikey,
+  ai_apikey_id,
   SUM(total_tokens) AS total_tokens,
   SUM(request_count) AS requests
 FROM bfe_ai_metrics_1m
 WHERE ts_min >= $__timeFrom() AND ts_min < $__timeTo()
-GROUP BY ai_apikey
+GROUP BY ai_apikey_id
 ORDER BY total_tokens DESC
 LIMIT 20;
 ```
@@ -896,14 +896,14 @@ LIMIT 20;
 
 ```sql
 SELECT
-  log_time, logid, hostid, ai_apikey, ai_requested_model, ai_mapped_model,
+  log_time, logid, hostid, ai_apikey_id, ai_requested_model, ai_target_model,
   ai_stream, ai_total_tokens, all_time, res_status_code, err_code, err_msg,
   header_host, origin_uri, method, client_ip, res_content_type,
   ai_rate_limit_hits, ai_auth_reject_reason
 FROM bfe_ai_request_log
 WHERE log_time >= $__timeFrom() AND log_time < $__timeTo()
-  AND (ai_apikey = '$apikey' OR '$apikey' = '')
-  AND (ai_mapped_model IN ($model) OR '$model' = '')
+  AND (ai_apikey_id = '$apikey' OR '$apikey' = '')
+  AND (ai_target_model IN ($model) OR '$model' = '')
   AND (origin_uri LIKE '%$uri%' OR '$uri' = '')
 ORDER BY log_time DESC
 LIMIT 100;
@@ -913,7 +913,7 @@ LIMIT 100;
 
 ```sql
 SELECT
-  log_time, logid, hostid, ai_apikey, ai_mapped_model, origin_uri,
+  log_time, logid, hostid, ai_apikey_id, ai_target_model, origin_uri,
   hit.rate_limit_policy_id, hit.rate_limit_type, hit.rule_names
 FROM bfe_ai_request_log
 CROSS JOIN UNNEST(ai_rate_limit_hits) AS hit
@@ -944,7 +944,7 @@ SELECT
   SUM(error_count) / SUM(request_count) AS error_rate
 FROM bfe_ai_metrics_1m
 WHERE ts_min >= NOW() - INTERVAL 5 MINUTE
-  AND ai_mapped_model IN ($model)
+  AND ai_target_model IN ($model)
 GROUP BY ts_min
 ORDER BY ts_min;
 ```
@@ -957,7 +957,7 @@ SELECT
   PERCENTILE_APPROX(all_time, 0.99) AS p99
 FROM bfe_ai_request_log
 WHERE log_time >= NOW() - INTERVAL 5 MINUTE
-  AND ai_mapped_model IN ($model)
+  AND ai_target_model IN ($model)
   AND all_time IS NOT NULL
 GROUP BY time
 ORDER BY time;
@@ -977,7 +977,7 @@ ORDER BY time;
 
 | 维度 | 问题 |
 |------|------|
-| `ai_apikey` | 最高基数维度，百万级用户，每个用户一个唯一值 |
+| `ai_apikey_id` | 最高基数维度，百万级用户，每个用户一个唯一值 |
 | `backend_info` | IP:Port 级别，每个后端实例一个值，高基数且频繁变更 |
 | `hostid` | 每台 BFE 实例一个值，数百~数千 |
 | `header_host` | 域名级别，数百~数千 |

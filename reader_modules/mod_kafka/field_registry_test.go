@@ -60,15 +60,33 @@ func makeBfeLog() *bfe_access_pb.BfeLog {
 			SessionOffsetTime:  uint32Ptr(9),
 			ConnectBackendTime: uint32Ptr(1),
 			ProxyDelayTime:     uint32Ptr(3),
-			AiApikey:           strPtr("sk-test"),
+			AiApikeyId:         strPtr("key-id-123"),
 			AiRequestedModel:   strPtr("test-model"),
-			AiMappedModel:      strPtr("gpt-5"),
+			AiTargetModel:      strPtr("gpt-5"),
 			AiStream:           boolPtr(false),
-			AiPromptTokens:     int64Ptr(34),
+			AiInputTokens:      int64Ptr(34),
 			AiOutputTokens:     int64Ptr(182),
 			AiTotalTokens:      int64Ptr(216),
 			AiTtftUs:           int64Ptr(5486),
 			AiTpotUs:           int64Ptr(3),
+			AiProvider:         strPtr("openai"),
+			AiRetryCount:       uint32Ptr(1),
+			AiCostValue:        int64Ptr(5000),
+			AiCostCurrency:     strPtr("USD"),
+			AiRouteRuleHits: []*bfe_access_pb.AIRouteRuleHit{
+				{
+					RuleOwner:     strPtr("ak_user_a"),
+					RuleOwnerType: strPtr("apikey"),
+					RuleName:      strPtr("user_a-rule1"),
+				},
+			},
+			AiClusterKeyNames: []*bfe_access_pb.ClusterKeyName{
+				{
+					ClusterName: strPtr("cluster-a"),
+					KeyName:     strPtr("key-001"),
+				},
+			},
+			AiAuthHitQuotaPlans: []string{"hit-plan-a"},
 		},
 	}
 }
@@ -81,8 +99,8 @@ func boolPtr(v bool) *bool       { return &v }
 
 func TestFieldRegistry_DefaultFieldsCount(t *testing.T) {
 	def := DefaultFields()
-	if len(def) != 48 {
-		t.Fatalf("expected 48 default fields, got %d: %v", len(def), def)
+	if len(def) != 55 {
+		t.Fatalf("expected 55 default fields, got %d: %v", len(def), def)
 	}
 }
 
@@ -95,8 +113,8 @@ func TestFieldRegistry_RequiredFieldsCount(t *testing.T) {
 
 func TestFieldRegistry_AllFieldsCount(t *testing.T) {
 	all := AllFields()
-	if len(all) < 60 {
-		t.Fatalf("expected at least 60 fields, got %d", len(all))
+	if len(all) < 67 {
+		t.Fatalf("expected at least 67 fields, got %d", len(all))
 	}
 }
 
@@ -107,8 +125,11 @@ func TestFieldRegistry_IsValidField(t *testing.T) {
 	if !IsValidField("hostid") {
 		t.Error("hostid should be valid")
 	}
-	if !IsValidField("ai_apikey") {
-		t.Error("ai_apikey should be valid")
+	if !IsValidField("ai_apikey_id") {
+		t.Error("ai_apikey_id should be valid")
+	}
+	if IsValidField("ai_apikey") {
+		t.Error("ai_apikey should not be valid (renamed to ai_apikey_id)")
 	}
 	if !IsValidField("referrer") {
 		t.Error("referrer should be valid")
@@ -145,15 +166,19 @@ func TestFieldRegistry_Extract(t *testing.T) {
 		{"read_client_time", uint32(2)},
 		{"cluster_serve_time", uint32(5)},
 		{"backend_serve_time", uint32(4)},
-		{"ai_apikey", "sk-test"},
+		{"ai_apikey_id", "key-id-123"},
 		{"ai_requested_model", "test-model"},
-		{"ai_mapped_model", "gpt-5"},
+		{"ai_target_model", "gpt-5"},
 		{"ai_stream", false},
-		{"ai_prompt_tokens", int64(34)},
+		{"ai_input_tokens", int64(34)},
 		{"ai_output_tokens", int64(182)},
 		{"ai_total_tokens", int64(216)},
 		{"ai_ttft_us", int64(5486)},
 		{"ai_tpot_us", int64(3)},
+		{"ai_provider", "openai"},
+		{"ai_retry_count", uint32(1)},
+		{"ai_cost_value", int64(5000)},
+		{"ai_cost_currency", "USD"},
 	}
 
 	for _, tt := range tests {
@@ -173,6 +198,57 @@ func TestFieldRegistry_Extract(t *testing.T) {
 			}
 			_ = isZero
 		})
+	}
+}
+
+func TestFieldRegistry_ExtractAIRouteRuleHits(t *testing.T) {
+	log := makeBfeLog()
+	val, isZero := Extract("ai_route_rule_hits", log)
+	if isZero {
+		t.Fatal("ai_route_rule_hits should not be zero")
+	}
+	hits, ok := val.([]AIRouteRuleHitJSON)
+	if !ok {
+		t.Fatalf("expected []AIRouteRuleHitJSON, got %T", val)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 hit, got %d", len(hits))
+	}
+	if hits[0].RuleOwner != "ak_user_a" || hits[0].RuleOwnerType != "apikey" || hits[0].RuleName != "user_a-rule1" {
+		t.Errorf("unexpected hit: %+v", hits[0])
+	}
+}
+
+func TestFieldRegistry_ExtractAIClusterKeyNames(t *testing.T) {
+	log := makeBfeLog()
+	val, isZero := Extract("ai_cluster_key_names", log)
+	if isZero {
+		t.Fatal("ai_cluster_key_names should not be zero")
+	}
+	pairs, ok := val.([]ClusterKeyNameJSON)
+	if !ok {
+		t.Fatalf("expected []ClusterKeyNameJSON, got %T", val)
+	}
+	if len(pairs) != 1 {
+		t.Fatalf("expected 1 pair, got %d", len(pairs))
+	}
+	if pairs[0].ClusterName != "cluster-a" || pairs[0].KeyName != "key-001" {
+		t.Errorf("unexpected pair: %+v", pairs[0])
+	}
+}
+
+func TestFieldRegistry_ExtractAIAuthHitQuotaPlans(t *testing.T) {
+	log := makeBfeLog()
+	val, isZero := Extract("ai_auth_hit_quota_plans", log)
+	if isZero {
+		t.Fatal("ai_auth_hit_quota_plans should not be zero")
+	}
+	plans, ok := val.([]string)
+	if !ok {
+		t.Fatalf("expected []string, got %T", val)
+	}
+	if len(plans) != 1 || plans[0] != "hit-plan-a" {
+		t.Errorf("unexpected plans: %v", plans)
 	}
 }
 

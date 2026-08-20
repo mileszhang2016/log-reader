@@ -137,12 +137,12 @@ Output fields are controlled via `FieldMode` in `kafka_config.data`:
 
 | JSON Field | Type | Required | Default | Description |
 |------------|------|----------|---------|-------------|
-| `ai_apikey` | string | ❌ | ✅ | AI API Key |
+| `ai_apikey_id` | string | ❌ | ✅ | API Key internal identifier |
 | `ai_apikeytags` | []object | ❌ | ✅ | API Key tag list, each item as `{"tagname": "...", "tagvalue": "..."}` |
 | `ai_requested_model` | string | ❌ | ✅ | Model name requested by the client |
-| `ai_mapped_model` | string | ❌ | ✅ | Actual model name after routing mapping |
+| `ai_target_model` | string | ❌ | ✅ | Actual target model name after routing |
 | `ai_stream` | bool | ❌ | ✅ | Whether the request is a streaming request |
-| `ai_prompt_tokens` | int64 | ❌ | ✅ | Number of prompt tokens consumed |
+| `ai_input_tokens` | int64 | ❌ | ✅ | Number of input tokens consumed |
 | `ai_output_tokens` | int64 | ❌ | ✅ | Number of output tokens consumed (may be -1 when rate limited) |
 | `ai_total_tokens` | int64 | ❌ | ✅ | Total number of tokens consumed |
 | `ai_ttft_us` | int64 | ❌ | ✅ | Time To First Token latency (microseconds) |
@@ -150,6 +150,13 @@ Output fields are controlled via `FieldMode` in `kafka_config.data`:
 | `ai_rate_limit_hits` | []object | ❌ | ✅ | Rate limit hit records, each item as `{"rate_limit_policy_id": "...", "rate_limit_type": "...", "rule_names": [...]}` |
 | `ai_auth_reject_reason` | string | ❌ | ✅ | Authentication/authorization rejection reason |
 | `ai_auth_reject_quota_plans` | []string | ❌ | ✅ | List of rejected quota plan names |
+| `ai_provider` | string | ❌ | ✅ | Upstream model provider |
+| `ai_retry_count` | uint32 | ❌ | ✅ | Model invocation retry count |
+| `ai_cost_value` | int64 | ❌ | ✅ | Fixed-point cost value |
+| `ai_cost_currency` | string | ❌ | ✅ | Cost currency |
+| `ai_route_rule_hits` | []object | ❌ | ✅ | AI routing rule hit records |
+| `ai_cluster_key_names` | []object | ❌ | ✅ | Tried cluster and key name pairs |
+| `ai_auth_hit_quota_plans` | []string | ❌ | ✅ | List of hit quota plan names for successful requests |
 
 ### 3.12. Address Information Fields (Flattened from ConnAddrInfo)
 
@@ -177,9 +184,9 @@ Output fields are controlled via `FieldMode` in `kafka_config.data`:
 | Response Information | 6 | 3 | 4 |
 | Response Header List | 1 | 0 | 0 |
 | Timing Information | 8 | 5 | 6 |
-| AI Observability | 13 | 0 | 13 |
+| AI Observability | 20 | 0 | 20 |
 | Address Information | 5 | 0 | 1 |
-| **Total** | **66** | **22** | **46** |
+| **Total** | **73** | **22** | **53** |
 
 ---
 
@@ -217,7 +224,38 @@ Output fields are controlled via `FieldMode` in `kafka_config.data`:
 | `rate_limit_type` | string | Rate limit type (e.g. `tpm`, `rpm`) |
 | `rule_names` | []string | List of matched rule names |
 
-### 5.3. req_headers / res_headers ([]object)
+### 5.3. ai_route_rule_hits ([]object)
+
+```json
+[
+    {
+        "rule_owner": "ak_user_a",
+        "rule_owner_type": "apikey",
+        "rule_name": "user_a-rule1"
+    }
+]
+```
+
+| Sub-field | Type | Description |
+|-----------|------|-------------|
+| `rule_owner` | string | Route table owner |
+| `rule_owner_type` | string | Route table type (e.g. `apikey`, `entity`, `global`) |
+| `rule_name` | string | Rule name |
+
+### 5.4. ai_cluster_key_names ([]object)
+
+```json
+[
+    {"cluster_name": "cluster-a", "key_name": "key-001"}
+]
+```
+
+| Sub-field | Type | Description |
+|-----------|------|-------------|
+| `cluster_name` | string | Cluster name |
+| `key_name` | string | API Key name/identifier |
+
+### 5.5. req_headers / res_headers ([]object)
 
 ```json
 [
@@ -247,12 +285,12 @@ FieldMode = default
 ```ini
 [ConfFields]
 FieldMode = customized
-FieldNames = ai_apikey
+FieldNames = ai_apikey_id
 FieldNames = ai_apikeytags
 FieldNames = ai_requested_model
-FieldNames = ai_mapped_model
+FieldNames = ai_target_model
 FieldNames = ai_stream
-FieldNames = ai_prompt_tokens
+FieldNames = ai_input_tokens
 FieldNames = ai_output_tokens
 FieldNames = ai_total_tokens
 FieldNames = ai_ttft_us

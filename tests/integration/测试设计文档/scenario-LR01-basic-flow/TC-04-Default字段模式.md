@@ -56,7 +56,7 @@ LR01 基本流程与 JSON 转换正确性
 - `MockKafka` 收到 1 条消息。
 - 消息包含默认字段集中的常用字段，例如：
   - 必需字段：`logid`、`timestamp`、`product`、`hostid`、`client_ip`、`err_code` 等；
-  - 默认字段：`header_host`、`origin_uri`、`method`、`res_status_code`、`ai_requested_model`、`ai_mapped_model` 等。
+  - 默认字段：`header_host`、`origin_uri`、`method`、`res_status_code`、`ai_requested_model`、`ai_target_model`、`ai_apikey_id`、`ai_input_tokens`、`ai_provider` 等。
 - `logid = 40001`，`header_host = "default.example.org"`，`origin_uri = "/v1/chat"`，`ai_requested_model = "default-model"`。
 
 ## 清理

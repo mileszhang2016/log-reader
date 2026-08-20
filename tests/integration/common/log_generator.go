@@ -153,12 +153,12 @@ func MakeRequestLog(logid uint64, product bfe_access_pb.ProductID, host, uri, mo
 			ProxyDelayTime:     uint32Ptr(3),
 
 			// AI observability fields.
-			AiApikey:        strPtr("sk-test"),
-			AiApikeytags:    []*bfe_access_pb.ApikeyTag{{Tagname: strPtr("dep"), Tagvalue: strPtr("ops")}, {Tagname: strPtr("team"), Tagvalue: strPtr("bfe")}},
+			AiApikeyId:       strPtr("key-id-123"),
+			AiApikeytags:     []*bfe_access_pb.ApikeyTag{{Tagname: strPtr("dep"), Tagvalue: strPtr("ops")}, {Tagname: strPtr("team"), Tagvalue: strPtr("bfe")}},
 			AiRequestedModel: strPtr(model),
-			AiMappedModel:    strPtr(model + "-mapped"),
+			AiTargetModel:    strPtr(model + "-mapped"),
 			AiStream:         boolPtr(true),
-			AiPromptTokens:   int64Ptr(1000),
+			AiInputTokens:    int64Ptr(1000),
 			AiOutputTokens:   int64Ptr(200),
 			AiTotalTokens:    int64Ptr(1200),
 			AiTtftUs:         int64Ptr(50000),
@@ -172,6 +172,26 @@ func MakeRequestLog(logid uint64, product bfe_access_pb.ProductID, host, uri, mo
 			},
 			AiAuthRejectReason:       strPtr("quota_exceeded"),
 			AiAuthRejectQuotaPlans:   []string{"plan-A", "plan-B"},
+
+			// AI observability new fields (v0.2.0).
+			AiProvider:      strPtr("openai"),
+			AiRetryCount:    uint32Ptr(1),
+			AiCostValue:     int64Ptr(5000),
+			AiCostCurrency:  strPtr("USD"),
+			AiRouteRuleHits: []*bfe_access_pb.AIRouteRuleHit{
+				{
+					RuleOwner:     strPtr("ak_user_a"),
+					RuleOwnerType: strPtr("apikey"),
+					RuleName:      strPtr("user_a-rule1"),
+				},
+			},
+			AiClusterKeyNames: []*bfe_access_pb.ClusterKeyName{
+				{
+					ClusterName: strPtr("cluster-a"),
+					KeyName:     strPtr("key-001"),
+				},
+			},
+			AiAuthHitQuotaPlans: []string{"hit-plan-A", "hit-plan-B"},
 		},
 	}
 }
