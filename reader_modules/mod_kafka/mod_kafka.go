@@ -19,9 +19,9 @@ import (
 	"net/url"
 	"path"
 
-	"github.com/baidu/go-lib/log"
-	"github.com/baidu/go-lib/web-monitor/module_state2"
-	"github.com/baidu/go-lib/web-monitor/web_monitor"
+	"github.com/bfenetworks/go-lib/log"
+	"github.com/bfenetworks/go-lib/web-monitor/module_state2"
+	"github.com/bfenetworks/go-lib/web-monitor/web_monitor"
 
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
 	"github.com/bfenetworks/log-reader/reader_conf"
@@ -39,13 +39,20 @@ var COUNTER_KEYS = []string{
 	"SENT_KAFKA_CHN_FULL",
 }
 
+// producer is a small interface to make ModuleKafka testable
+type producer interface {
+	Send([]byte)
+	Start()
+	Close() error
+}
+
 // ModuleKafka Kafka 模块
 type ModuleKafka struct {
 	name         string
 	state        module_state2.State
 	stateDiff    module_state2.CounterSlice
 	conf         *ConfModKafka
-	producer     *KafkaProducer
+	producer     producer
 	outputFields *OutputFields
 }
 

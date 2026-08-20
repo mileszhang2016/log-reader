@@ -5,15 +5,16 @@ go 1.22
 toolchain go1.22.9
 
 require (
-	github.com/baidu/go-lib v0.0.0-20200819072111-21df249f5e6a
 	github.com/bfenetworks/bfe v1.8.3
 	github.com/bfenetworks/bfe-access-pb v0.1.0
+	github.com/bfenetworks/go-lib v0.0.3
 	github.com/segmentio/kafka-go v0.4.47
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/gcfg.v1 v1.2.3
 )
 
 require (
+	github.com/baidu/go-lib v0.0.0-20200819072111-21df249f5e6a // indirect
 	github.com/jehiah/go-strftime v0.0.0-20171201141054-1d33003b3869 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.15.9 // indirect

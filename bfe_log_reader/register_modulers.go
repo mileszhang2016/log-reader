@@ -15,7 +15,7 @@
 package bfe_log_reader
 
 import (
-	"github.com/baidu/go-lib/log"
+	"github.com/bfenetworks/go-lib/log"
 	"github.com/bfenetworks/log-reader/reader_conf"
 	"github.com/bfenetworks/log-reader/reader_module"
 )

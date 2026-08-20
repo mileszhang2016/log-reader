@@ -17,9 +17,9 @@ package bfe_log_reader
 import (
 	"fmt"
 
-	"github.com/baidu/go-lib/log"
-	"github.com/baidu/go-lib/web-monitor/module_state2"
-	"github.com/baidu/go-lib/web-monitor/web_monitor"
+	"github.com/bfenetworks/go-lib/log"
+	"github.com/bfenetworks/go-lib/web-monitor/module_state2"
+	"github.com/bfenetworks/go-lib/web-monitor/web_monitor"
 	"github.com/bfenetworks/bfe/bfe_util/signal_table"
 	"github.com/bfenetworks/log-reader/reader_conf"
 	"github.com/bfenetworks/log-reader/reader_module"
@@ -84,7 +84,11 @@ func NewBfeLogReader(config *reader_conf.ReaderConfig, version string) (*BfeLogR
 	}
 
 	// initialize web server
-	br.WebServer = web_monitor.NewMonitorServer("log-reader", version, config.Main.HttpPort)
+	if config.Main.HttpAddr != "" {
+		br.WebServer = web_monitor.NewMonitorServerWithAddr("log-reader", version, config.Main.HttpAddr, config.Main.HttpPort)
+	} else {
+		br.WebServer = web_monitor.NewMonitorServer("log-reader", version, config.Main.HttpPort)
+	}
 	br.WebServer.HandlersSet(br.WebHandlers)
 
 	// new log reader

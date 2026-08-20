@@ -15,7 +15,7 @@
 package bfe_log_reader
 
 import (
-	"github.com/baidu/go-lib/web-monitor/web_monitor"
+	"github.com/bfenetworks/go-lib/web-monitor/web_monitor"
 )
 
 // all monitor handlers

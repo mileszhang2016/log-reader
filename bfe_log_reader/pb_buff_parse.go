@@ -15,7 +15,7 @@
 package bfe_log_reader
 
 import (
-	"github.com/baidu/go-lib/web-monitor/module_state2"
+	"github.com/bfenetworks/go-lib/web-monitor/module_state2"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/bfenetworks/bfe-access-pb/b2log"

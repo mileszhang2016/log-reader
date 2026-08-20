@@ -19,8 +19,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/baidu/go-lib/log"
-	"github.com/baidu/go-lib/web-monitor/module_state2"
+	"github.com/bfenetworks/go-lib/log"
+	"github.com/bfenetworks/go-lib/web-monitor/module_state2"
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
 	"github.com/bfenetworks/log-reader/reader_module"
 )

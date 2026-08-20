@@ -17,14 +17,15 @@ package reader_conf
 import (
 	"fmt"
 
-	"github.com/baidu/go-lib/log"
+	"github.com/bfenetworks/go-lib/log"
 )
 
 /* main conf */
 type ConfBasic struct {
-	MaxCpus         int // max cpus to use
-	HttpPort        int // http port for monitor and reload
-	MonitorInterval int // interval for getting diff of server-state
+	MaxCpus         int    // max cpus to use
+	HttpPort        int    // http port for monitor and reload
+	HttpAddr        string // http listen address for monitor and reload (empty means all interfaces)
+	MonitorInterval int    // interval for getting diff of server-state
 
 	ProgramName string // name of the program
 }

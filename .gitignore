@@ -1,0 +1,20 @@
+# Build outputs
+output/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Integration test binaries
+tests/integration/.integration-test-bin/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
