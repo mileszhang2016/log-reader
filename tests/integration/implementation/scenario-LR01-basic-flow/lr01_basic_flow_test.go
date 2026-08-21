@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -201,6 +202,19 @@ func assertFieldStringSliceEquals(t *testing.T, payload map[string]interface{}, 
 	}
 }
 
+// assertFieldObjectEquals checks that payload[field] deeply equals want as an object.
+func assertFieldObjectEquals(t *testing.T, payload map[string]interface{}, field string, want map[string]interface{}) {
+	t.Helper()
+	got, ok := payload[field]
+	if !ok {
+		t.Errorf("missing field %q", field)
+		return
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("field %q = %v, want %v", field, got, want)
+	}
+}
+
 // assertFieldObjectArrayEquals checks that payload[field] equals want as an object array.
 // Each want element is a map of field names to expected values. Only the listed keys are checked.
 // Values of type []string are compared as string slices against the nested JSON array.
@@ -327,9 +341,12 @@ func TestLR01_BasicFlow(t *testing.T) {
 
 		// --- AI observability fields (configured) ---
 		assertFieldEquals(t, payload, "ai_apikey_id", "key-id-123")
-		assertFieldObjectArrayEquals(t, payload, "ai_apikeytags", []map[string]interface{}{
-			{"tagname": "dep", "tagvalue": "ops"},
-			{"tagname": "team", "tagvalue": "bfe"},
+		assertFieldObjectEquals(t, payload, "ai_apikeytags", map[string]interface{}{
+			"level1": map[string]interface{}{"tagname": "dep", "tagvalue": "ops"},
+			"level2": map[string]interface{}{"tagname": "team", "tagvalue": "bfe"},
+			"level3": map[string]interface{}{},
+			"level4": map[string]interface{}{},
+			"level5": map[string]interface{}{},
 		})
 		assertFieldEquals(t, payload, "ai_requested_model", req.GetAiRequestedModel())
 		assertFieldEquals(t, payload, "ai_target_model", req.GetAiTargetModel())
