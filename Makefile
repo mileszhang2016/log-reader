@@ -113,11 +113,11 @@ package:
 	cp -r conf $(OUTDIR)
 
 # make release, build cross-compiled release packages
-# produces: dist/log-reader_$(VERSION)_linux_amd64.tar.gz, linux_arm64, windows_amd64
-# NOTE: darwin is not supported (no register_signal_darwin.go)
+# produces: dist/log-reader_$(VERSION)_<os>_<arch>.tar.gz
 release: prepare
 	@echo "Building release packages for log-reader $(LOG_READER_VERSION)..."
 	@for platform in \
+		"darwin/arm64" \
 		"linux/amd64" \
 		"linux/arm64" \
 		"windows/amd64"; do \
