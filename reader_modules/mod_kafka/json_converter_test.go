@@ -81,8 +81,11 @@ func TestConvertBfeLogToJSON_RequireFields(t *testing.T) {
 		}
 	}
 
+	if _, ok := result["ai_apikey_id"]; ok {
+		t.Error("ai_apikey_id should not be in require output")
+	}
 	if _, ok := result["ai_apikey"]; ok {
-		t.Error("ai_apikey should not be in require output")
+		t.Error("ai_apikey should not be in require output (renamed)")
 	}
 	if _, ok := result["cluster"]; ok {
 		t.Error("cluster should not be in require output")
@@ -94,7 +97,7 @@ func TestConvertBfeLogToJSON_CustomizedFields(t *testing.T) {
 	cfg := &KafkaDataConfig{
 		ConfFields: ConfKafkaFields{
 			FieldMode:  "customized",
-			FieldNames: []string{"ai_apikey", "ai_requested_model"},
+			FieldNames: []string{"ai_apikey_id", "ai_requested_model", "ai_target_model", "ai_input_tokens", "ai_provider", "ai_route_rule_hits", "ai_cluster_key_names", "ai_auth_hit_quota_plans"},
 		},
 	}
 	of := cfg.ResolveFields()
@@ -109,11 +112,43 @@ func TestConvertBfeLogToJSON_CustomizedFields(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	if result["ai_apikey"] != "sk-test" {
-		t.Errorf("ai_apikey: expected sk-test, got %v", result["ai_apikey"])
+	if result["ai_apikey_id"] != "key-id-123" {
+		t.Errorf("ai_apikey_id: expected key-id-123, got %v", result["ai_apikey_id"])
 	}
 	if result["ai_requested_model"] != "test-model" {
 		t.Errorf("ai_requested_model: expected test-model, got %v", result["ai_requested_model"])
+	}
+	if result["ai_target_model"] != "gpt-5" {
+		t.Errorf("ai_target_model: expected gpt-5, got %v", result["ai_target_model"])
+	}
+	if result["ai_input_tokens"].(float64) != 34 {
+		t.Errorf("ai_input_tokens: expected 34, got %v", result["ai_input_tokens"])
+	}
+	if result["ai_provider"] != "openai" {
+		t.Errorf("ai_provider: expected openai, got %v", result["ai_provider"])
+	}
+
+	routeHits, ok := result["ai_route_rule_hits"].([]interface{})
+	if !ok || len(routeHits) != 1 {
+		t.Fatalf("ai_route_rule_hits: expected 1 element array, got %v", result["ai_route_rule_hits"])
+	}
+	firstHit := routeHits[0].(map[string]interface{})
+	if firstHit["rule_owner"] != "ak_user_a" {
+		t.Errorf("ai_route_rule_hits[0].rule_owner: expected ak_user_a, got %v", firstHit["rule_owner"])
+	}
+
+	clusterKeys, ok := result["ai_cluster_key_names"].([]interface{})
+	if !ok || len(clusterKeys) != 1 {
+		t.Fatalf("ai_cluster_key_names: expected 1 element array, got %v", result["ai_cluster_key_names"])
+	}
+	firstPair := clusterKeys[0].(map[string]interface{})
+	if firstPair["cluster_name"] != "cluster-a" {
+		t.Errorf("ai_cluster_key_names[0].cluster_name: expected cluster-a, got %v", firstPair["cluster_name"])
+	}
+
+	hitPlans, ok := result["ai_auth_hit_quota_plans"].([]interface{})
+	if !ok || len(hitPlans) != 1 || hitPlans[0].(string) != "hit-plan-a" {
+		t.Errorf("ai_auth_hit_quota_plans: expected [hit-plan-a], got %v", result["ai_auth_hit_quota_plans"])
 	}
 
 	for _, name := range RequiredFields() {

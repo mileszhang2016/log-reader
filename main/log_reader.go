@@ -24,8 +24,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/baidu/go-lib/log"
-	"github.com/baidu/go-lib/log/log4go"
+	"github.com/bfenetworks/go-lib/log"
+	"github.com/bfenetworks/go-lib/log/log4go"
 	"github.com/bfenetworks/log-reader/bfe_log_reader"
 	"github.com/bfenetworks/log-reader/reader_conf"
 	"github.com/bfenetworks/log-reader/reader_module"
