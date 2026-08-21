@@ -112,6 +112,36 @@ package:
 	mv log_reader  $(OUTDIR)/bin
 	cp -r conf $(OUTDIR)
 
+# make release, build cross-compiled release packages
+# produces: dist/log-reader_$(VERSION)_linux_amd64.tar.gz, linux_arm64, windows_amd64
+# NOTE: darwin is not supported (no register_signal_darwin.go)
+release: prepare
+	@echo "Building release packages for log-reader $(LOG_READER_VERSION)..."
+	@for platform in \
+		"linux/amd64" \
+		"linux/arm64" \
+		"windows/amd64"; do \
+		GOOS=$${platform%/*}; \
+		GOARCH=$${platform#*/}; \
+		PKG_DIR="dist/log-reader_$(LOG_READER_VERSION)_$${GOOS}_$${GOARCH}"; \
+		BIN_NAME="log-reader"; \
+		LDFLAGS="-X main.version=$(LOG_READER_VERSION) -X main.commit=$(GIT_COMMIT)"; \
+		if [ "$${GOOS}" = "windows" ]; then \
+			BIN_NAME="log-reader.exe"; \
+		fi; \
+		echo "  -> Building $$GOOS/$$GOARCH..."; \
+		rm -rf "$${PKG_DIR}"; \
+		mkdir -p "$${PKG_DIR}/bin"; \
+		CGO_ENABLED=0 GOOS=$${GOOS} GOARCH=$${GOARCH} $(GOBUILD) -ldflags "$${LDFLAGS}" -o "$${PKG_DIR}/bin/$${BIN_NAME}" ./main; \
+		cp -r conf "$${PKG_DIR}/"; \
+		cp readme.txt "$${PKG_DIR}/README.md"; \
+		cp LICENSE "$${PKG_DIR}/"; \
+		tar -czf "$${PKG_DIR}.tar.gz" -C "$${PKG_DIR}" .; \
+		rm -rf "$${PKG_DIR}"; \
+		echo "  -> dist/log-reader_$(LOG_READER_VERSION)_$${GOOS}_$${GOARCH}.tar.gz done"; \
+	done
+	@echo "Release packages built successfully."
+
 # make deps
 deps:
 	$(call PIP_INSTALL_PKG, pre-commit)
@@ -138,9 +168,10 @@ license-fix:
 # make clean
 clean:
 	$(GOCLEAN)
+	rm -rf dist/
 	rm -rf $(OUTDIR)
 	rm -rf $(WORKROOT)/log_reader
 	rm -rf $(GOPATH)/pkg/linux_amd64
 
 # avoid filename conflict and speed up build 
-.PHONY: all prepare compile test package clean build strip compile-strip build-strip test-case vet-case coverage deps precommit check license-check license-fix prepare-dep prepare-gen
+.PHONY: all prepare compile test package release clean build strip compile-strip build-strip test-case vet-case coverage deps precommit check license-check license-fix prepare-dep prepare-gen

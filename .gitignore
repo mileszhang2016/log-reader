@@ -4,6 +4,7 @@ output/
 *.dll
 *.so
 *.dylib
+dist
 
 # Integration test binaries
 tests/integration/.integration-test-bin/
@@ -11,6 +12,8 @@ tests/integration/.integration-test-bin/
 # IDE
 .idea/
 .vscode/
+.omo
+.codegraph
 *.swp
 *.swo
 *~
