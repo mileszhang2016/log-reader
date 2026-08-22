@@ -140,6 +140,8 @@
 | `ai_input_tokens` | int64 | ❌ | ✅ | 输入 Token 数 |
 | `ai_output_tokens` | int64 | ❌ | ✅ | 输出消耗 Token 数（限流时可能为 -1） |
 | `ai_total_tokens` | int64 | ❌ | ✅ | 总消耗 Token 数 |
+| `ai_cache_read_tokens` | int64 | ❌ | ✅ | 从 cache 读取的 Token 数 |
+| `ai_cache_write_tokens` | int64 | ❌ | ✅ | 写入 cache 的 Token 数 |
 | `ai_ttft_us` | int64 | ❌ | ✅ | 首 Token 延迟（微秒），Time To First Token |
 | `ai_tpot_us` | int64 | ❌ | ✅ | 每 Token 输出延迟（微秒），Time Per Output Token |
 | `ai_rate_limit_hits` | []object | ❌ | ✅ | 限流命中记录，每项为 `{"rate_limit_policy_id": "...", "rate_limit_type": "...", "rule_names": [...]}` |
@@ -179,9 +181,9 @@
 | 响应信息 | 6 | 3 | 4 |
 | 响应头列表 | 1 | 0 | 0 |
 | 时间信息 | 8 | 5 | 6 |
-| AI 可观测 | 20 | 0 | 20 |
+| AI 可观测 | 22 | 0 | 22 |
 | 地址信息 | 5 | 0 | 1 |
-| **总计** | **73** | **22** | **53** |
+| **总计** | **75** | **22** | **55** |
 
 ---
 
