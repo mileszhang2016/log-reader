@@ -748,6 +748,24 @@ func registerAllFields() {
 		},
 		isZeroInt64,
 	)
+	registerField("ai_cache_read_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiCacheReadTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_cache_write_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiCacheWriteTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
 	registerField("ai_ttft_us", "int64", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {

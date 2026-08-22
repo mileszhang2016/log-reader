@@ -163,8 +163,10 @@ func MakeRequestLog(logid uint64, product bfe_access_pb.ProductID, host, uri, mo
 			AiStream:         boolPtr(true),
 			AiInputTokens:    int64Ptr(1000),
 			AiOutputTokens:   int64Ptr(200),
-			AiTotalTokens:    int64Ptr(1200),
-			AiTtftUs:         int64Ptr(50000),
+			AiTotalTokens:      int64Ptr(1200),
+			AiCacheReadTokens:  int64Ptr(500),
+			AiCacheWriteTokens: int64Ptr(100),
+			AiTtftUs:           int64Ptr(50000),
 			AiTpotUs:         int64Ptr(2500),
 			AiRateLimitHits: []*bfe_access_pb.RateLimitHit{
 				{

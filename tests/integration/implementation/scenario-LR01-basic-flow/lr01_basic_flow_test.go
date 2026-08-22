@@ -354,6 +354,8 @@ func TestLR01_BasicFlow(t *testing.T) {
 		assertFieldEquals(t, payload, "ai_input_tokens", float64(1000))
 		assertFieldEquals(t, payload, "ai_output_tokens", float64(200))
 		assertFieldEquals(t, payload, "ai_total_tokens", float64(1200))
+		assertFieldEquals(t, payload, "ai_cache_read_tokens", float64(500))
+		assertFieldEquals(t, payload, "ai_cache_write_tokens", float64(100))
 		assertFieldEquals(t, payload, "ai_ttft_us", float64(50000))
 		assertFieldEquals(t, payload, "ai_tpot_us", float64(2500))
 		assertFieldObjectArrayEquals(t, payload, "ai_rate_limit_hits", []map[string]interface{}{

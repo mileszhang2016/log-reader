@@ -104,8 +104,8 @@ func boolPtr(v bool) *bool       { return &v }
 
 func TestFieldRegistry_DefaultFieldsCount(t *testing.T) {
 	def := DefaultFields()
-	if len(def) != 55 {
-		t.Fatalf("expected 55 default fields, got %d: %v", len(def), def)
+	if len(def) != 57 {
+		t.Fatalf("expected 57 default fields, got %d: %v", len(def), def)
 	}
 }
 
