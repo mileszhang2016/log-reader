@@ -127,7 +127,7 @@
 | 字段名 | 类型 | 含义 | 必需 | 默认 |
 | ------ | ---- | ---- | ---- | ---- |
 | ai_apikey_id | string | API Key 内部标识 | N | Y |
-| ai_apikeytags | []object | API Key 标签列表 | N | Y |
+| ai_apikeytags | object | API Key 标签对象，包含 `level1` ~ `level5` | N | Y |
 | ai_requested_model | string | 请求模型 | N | Y |
 | ai_target_model | string | 实际路由目标模型名 | N | Y |
 | ai_stream | bool | 是否流式请求 | N | Y |

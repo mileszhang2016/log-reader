@@ -1,10 +1,5 @@
 # logreader可输出各个字段说明
 
-文档历史：
-- V1.0，叶云喜，2026/07/08
-
----
-
 ## 1. 概述
 
 本文档列出了 `log_reader` 的 `mod_kafka` 模块中所有已注册的 JSON 输出字段，包括每个字段的：
@@ -138,7 +133,7 @@
 | JSON 字段 | 类型 | Required | Default | 说明 |
 |-----------|------|----------|---------|------|
 | `ai_apikey_id` | string | ❌ | ✅ | API Key 内部标识 |
-| `ai_apikeytags` | []object | ❌ | ✅ | API Key 标签列表，每项为 `{"tagname": "...", "tagvalue": "..."}` |
+| `ai_apikeytags` | object | ❌ | ✅ | API Key 标签对象，包含 `level1` ~ `level5`，每个 level 非空时为 `{"tagname": "...", "tagvalue": "..."}` |
 | `ai_requested_model` | string | ❌ | ✅ | 客户端请求的模型名称 |
 | `ai_target_model` | string | ❌ | ✅ | 实际路由目标模型名 |
 | `ai_stream` | bool | ❌ | ✅ | 是否为流式请求 |
@@ -192,17 +187,30 @@
 
 ## 5. 复合对象结构说明
 
-### 5.1. ai_apikeytags（[]object）
+### 5.1. ai_apikeytags（object）
 
 ```json
-[
-    {"tagname": "dep", "tagvalue": "op"},
-    {"tagname": "team", "tagvalue": "bfe"}
-]
+{
+    "level1": {
+        "tagname": "dep",
+        "tagvalue": "op"
+    },
+    "level2": {
+        "tagname": "team",
+        "tagvalue": "bfe"
+    },
+    "level3": {
+        "tagname": "person",
+        "tagvalue": "zhangsan"
+    },
+    "level4": {},
+    "level5": {}
+}
 ```
 
 | 子字段 | 类型 | 说明 |
 |--------|------|------|
+| `level1` ~ `level5` | object | 各级标签对象；非空时包含 `tagname` 和 `tagvalue` |
 | `tagname` | string | 标签名 |
 | `tagvalue` | string | 标签值 |
 

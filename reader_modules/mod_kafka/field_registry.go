@@ -25,7 +25,7 @@ import (
 // FieldDef describes a JSON output field
 type FieldDef struct {
 	Name     string // JSON field name
-	Type     string // field type: "string", "uint64", "uint32", "int64", "bool", "[]object", "[]string"
+	Type     string // field type: "string", "uint64", "uint32", "int64", "bool", "object", "[]object", "[]string"
 	Required bool   // whether this field is always output
 	Default  bool   // whether this field is in the default set
 }
@@ -170,13 +170,15 @@ func isZeroBool(v interface{}) bool {
 	return !ok || !b
 }
 
+func isZeroObject(v interface{}) bool {
+	return v == nil
+}
+
 func isZeroSlice(v interface{}) bool {
 	if v == nil {
 		return true
 	}
 	switch s := v.(type) {
-	case []ApikeyTagJSON:
-		return len(s) == 0
 	case []AiRateLimitHitJSON:
 		return len(s) == 0
 	case []AIRouteRuleHitJSON:
@@ -662,22 +664,31 @@ func registerAllFields() {
 		isZeroString,
 	)
 
-	registerField("ai_apikeytags", "[]object", false, true,
+	registerField("ai_apikeytags", "object", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			result := map[string]interface{}{
+				"level1": map[string]interface{}{},
+				"level2": map[string]interface{}{},
+				"level3": map[string]interface{}{},
+				"level4": map[string]interface{}{},
+				"level5": map[string]interface{}{},
+			}
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
-				tags := reqLog.GetAiApikeytags()
-				result := make([]ApikeyTagJSON, 0, len(tags))
-				for _, t := range tags {
-					result = append(result, ApikeyTagJSON{
+				for _, t := range reqLog.GetAiApikeytags() {
+					lvl := t.GetTaglevel()
+					if lvl < 1 || lvl > 5 {
+						continue
+					}
+					key := fmt.Sprintf("level%d", lvl)
+					result[key] = ApikeyTagJSON{
 						Tagname:  t.GetTagname(),
 						Tagvalue: t.GetTagvalue(),
-					})
+					}
 				}
-				return result
 			}
-			return []ApikeyTagJSON{}
+			return result
 		},
-		isZeroSlice,
+		isZeroObject,
 	)
 
 	registerField("ai_requested_model", "string", false, true,

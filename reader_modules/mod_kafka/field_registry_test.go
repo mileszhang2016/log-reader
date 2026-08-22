@@ -61,6 +61,10 @@ func makeBfeLog() *bfe_access_pb.BfeLog {
 			ConnectBackendTime: uint32Ptr(1),
 			ProxyDelayTime:     uint32Ptr(3),
 			AiApikeyId:         strPtr("key-id-123"),
+			AiApikeytags: []*bfe_access_pb.ApikeyTag{
+				{Tagname: strPtr("dep"), Tagvalue: strPtr("ops"), Taglevel: int32Ptr(1)},
+				{Tagname: strPtr("team"), Tagvalue: strPtr("bfe"), Taglevel: int32Ptr(2)},
+			},
 			AiRequestedModel:   strPtr("test-model"),
 			AiTargetModel:      strPtr("gpt-5"),
 			AiStream:           boolPtr(false),
@@ -95,6 +99,7 @@ func strPtr(s string) *string    { return &s }
 func uint32Ptr(v uint32) *uint32 { return &v }
 func uint64Ptr(v uint64) *uint64 { return &v }
 func int64Ptr(v int64) *int64    { return &v }
+func int32Ptr(v int32) *int32    { return &v }
 func boolPtr(v bool) *bool       { return &v }
 
 func TestFieldRegistry_DefaultFieldsCount(t *testing.T) {
@@ -249,6 +254,35 @@ func TestFieldRegistry_ExtractAIAuthHitQuotaPlans(t *testing.T) {
 	}
 	if len(plans) != 1 || plans[0] != "hit-plan-a" {
 		t.Errorf("unexpected plans: %v", plans)
+	}
+}
+
+func TestFieldRegistry_ExtractAiApikeytags(t *testing.T) {
+	log := makeBfeLog()
+	val, isZero := Extract("ai_apikeytags", log)
+	if isZero {
+		t.Fatal("ai_apikeytags should not be zero")
+	}
+	tags, ok := val.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map[string]interface{}, got %T", val)
+	}
+	if len(tags) != 5 {
+		t.Fatalf("expected 5 levels, got %d", len(tags))
+	}
+	lvl1, ok := tags["level1"].(ApikeyTagJSON)
+	if !ok || lvl1.Tagname != "dep" || lvl1.Tagvalue != "ops" {
+		t.Errorf("unexpected level1: %+v", tags["level1"])
+	}
+	lvl2, ok := tags["level2"].(ApikeyTagJSON)
+	if !ok || lvl2.Tagname != "team" || lvl2.Tagvalue != "bfe" {
+		t.Errorf("unexpected level2: %+v", tags["level2"])
+	}
+	for _, lvl := range []string{"level3", "level4", "level5"} {
+		m, ok := tags[lvl].(map[string]interface{})
+		if !ok || len(m) != 0 {
+			t.Errorf("expected %s to be empty object, got %+v", lvl, tags[lvl])
+		}
 	}
 }
 
