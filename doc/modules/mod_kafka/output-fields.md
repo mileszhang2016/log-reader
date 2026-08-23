@@ -142,13 +142,18 @@
 | `ai_total_tokens` | int64 | ❌ | ✅ | 总消耗 Token 数 |
 | `ai_cache_read_tokens` | int64 | ❌ | ✅ | 从 cache 读取的 Token 数 |
 | `ai_cache_write_tokens` | int64 | ❌ | ✅ | 写入 cache 的 Token 数 |
+| `ai_audio_input_tokens` | int64 | ❌ | ✅ | 音频输入 Token 数，已包含在 `ai_input_tokens` 中 |
+| `ai_audio_output_tokens` | int64 | ❌ | ✅ | 音频输出 Token 数，已包含在 `ai_output_tokens` 中 |
+| `ai_image_count` | int64 | ❌ | ✅ | 图像生成模式下生成的图像张数 |
 | `ai_ttft_us` | int64 | ❌ | ✅ | 首 Token 延迟（微秒），Time To First Token |
 | `ai_tpot_us` | int64 | ❌ | ✅ | 每 Token 输出延迟（微秒），Time Per Output Token |
 | `ai_rate_limit_hits` | []object | ❌ | ✅ | 限流命中记录，每项为 `{"rate_limit_policy_id": "...", "rate_limit_type": "...", "rule_names": [...]}` |
 | `ai_auth_reject_reason` | string | ❌ | ✅ | 认证/鉴权拒绝原因 |
 | `ai_auth_reject_quota_plans` | []string | ❌ | ✅ | 被拒绝的配额计划（quota plan）名称列表 |
+| `ai_protocol` | string | ❌ | ✅ | AI 协议风格，如 `openai`、`anthropic` |
 | `ai_provider` | string | ❌ | ✅ | 上游模型提供商 |
 | `ai_retry_count` | uint32 | ❌ | ✅ | 模型调用层重试次数 |
+| `ai_mode` | string | ❌ | ✅ | AI 请求模式，如 `chat`、`image_generation`、`embedding`、`audio_speech` 等 |
 | `ai_cost_value` | int64 | ❌ | ✅ | 成本固定点整数值 |
 | `ai_cost_currency` | string | ❌ | ✅ | 成本币种 |
 | `ai_route_rule_hits` | []object | ❌ | ✅ | AI 路由规则命中记录 |
@@ -181,9 +186,9 @@
 | 响应信息 | 6 | 3 | 4 |
 | 响应头列表 | 1 | 0 | 0 |
 | 时间信息 | 8 | 5 | 6 |
-| AI 可观测 | 22 | 0 | 22 |
+| AI 可观测 | 27 | 0 | 27 |
 | 地址信息 | 5 | 0 | 1 |
-| **总计** | **75** | **22** | **55** |
+| **总计** | **80** | **22** | **60** |
 
 ---
 
