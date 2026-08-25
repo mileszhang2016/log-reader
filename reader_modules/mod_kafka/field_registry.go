@@ -766,6 +766,33 @@ func registerAllFields() {
 		},
 		isZeroInt64,
 	)
+	registerField("ai_audio_input_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiAudioInputTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_audio_output_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiAudioOutputTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_image_count", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiImageCount()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
 	registerField("ai_ttft_us", "int64", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
@@ -832,6 +859,15 @@ func registerAllFields() {
 		},
 		isZeroString,
 	)
+	registerField("ai_protocol", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiProtocol()
+			}
+			return ""
+		},
+		isZeroString,
+	)
 	registerField("ai_retry_count", "uint32", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
@@ -840,6 +876,15 @@ func registerAllFields() {
 			return uint32(0)
 		},
 		isZeroUint32,
+	)
+	registerField("ai_mode", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiMode()
+			}
+			return ""
+		},
+		isZeroString,
 	)
 	registerField("ai_cost_value", "int64", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {

@@ -1,7 +1,7 @@
 github.com/bfenetworks/bfe v1.8.5 h1:UJCA4SthVQ4Yrkt8NygqCA9sWPlGLipx0w929EAtQSw=
 github.com/bfenetworks/bfe v1.8.5/go.mod h1:1HUaOph1899XtuKTdU/vqgonFfxdqJ66xf9nLtHF+2A=
-github.com/bfenetworks/bfe-access-pb v0.3.1 h1:+eRfg0wz6NHLUXSWdmZs2FUP3nckyhK0dxz2XAzzDo4=
-github.com/bfenetworks/bfe-access-pb v0.3.1/go.mod h1:3qunybhMV5hEeT/2qDwbchxo4t/9LPKEvwwZkmekRho=
+github.com/bfenetworks/bfe-access-pb v0.3.4 h1:CFQlR78Utvb+c2T0pz1KQjZyurgo5tzoSWx4d996rXo=
+github.com/bfenetworks/bfe-access-pb v0.3.4/go.mod h1:3qunybhMV5hEeT/2qDwbchxo4t/9LPKEvwwZkmekRho=
 github.com/bfenetworks/go-lib v0.0.3 h1:504FrMW0qTKTODuUgkVGCy6DORBdZOgC78zGD9LwpKU=
 github.com/bfenetworks/go-lib v0.0.3/go.mod h1:DNiKiff30CaX7uOUGJpP85VyTn+JSFoY9gfG2AxmPgM=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
