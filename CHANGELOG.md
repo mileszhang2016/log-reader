@@ -10,6 +10,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.2.0] - 2026-08-29
+
+### Added
+- Register missing AI observability fields: `ai_protocol`, `ai_mode`, `ai_audio_input_tokens`, `ai_audio_output_tokens`, `ai_image_count`.
+- Support `ai_cache_read_tokens` and `ai_cache_write_tokens` output fields.
+
+### Changed
+- Update `ai_apikeytags` output format from array of objects to level-based object (`level1`~`level5`).
+- Upgrade `bfe-access-pb` dependency from v0.2.0 to v0.3.4.
+- Upgrade `bfe` dependency to v1.8.6.
+
+
 ## [v1.1.0] - 2026-08-21
 
 ### Added
@@ -33,5 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config loading system (`reader_conf`) with support for basic and access-pb config types.
 - Built-in Kafka output module (`mod_kafka`) for forwarding parsed access logs to Kafka.
 
-[Unreleased]: https://github.com/bfenetworks/log-reader/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/bfenetworks/log-reader/compare/v1.2.0...HEAD
+[v1.2.0]: https://github.com/bfenetworks/log-reader/compare/v1.1.0...v1.2.0
+[v1.1.0]: https://github.com/bfenetworks/log-reader/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/bfenetworks/log-reader/releases/tag/v1.0.0

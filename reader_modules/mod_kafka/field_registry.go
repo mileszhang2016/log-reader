@@ -25,7 +25,7 @@ import (
 // FieldDef describes a JSON output field
 type FieldDef struct {
 	Name     string // JSON field name
-	Type     string // field type: "string", "uint64", "uint32", "int64", "bool", "[]object", "[]string"
+	Type     string // field type: "string", "uint64", "uint32", "int64", "bool", "object", "[]object", "[]string"
 	Required bool   // whether this field is always output
 	Default  bool   // whether this field is in the default set
 }
@@ -170,13 +170,15 @@ func isZeroBool(v interface{}) bool {
 	return !ok || !b
 }
 
+func isZeroObject(v interface{}) bool {
+	return v == nil
+}
+
 func isZeroSlice(v interface{}) bool {
 	if v == nil {
 		return true
 	}
 	switch s := v.(type) {
-	case []ApikeyTagJSON:
-		return len(s) == 0
 	case []AiRateLimitHitJSON:
 		return len(s) == 0
 	case []AIRouteRuleHitJSON:
@@ -662,22 +664,31 @@ func registerAllFields() {
 		isZeroString,
 	)
 
-	registerField("ai_apikeytags", "[]object", false, true,
+	registerField("ai_apikeytags", "object", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			result := map[string]interface{}{
+				"level1": map[string]interface{}{},
+				"level2": map[string]interface{}{},
+				"level3": map[string]interface{}{},
+				"level4": map[string]interface{}{},
+				"level5": map[string]interface{}{},
+			}
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
-				tags := reqLog.GetAiApikeytags()
-				result := make([]ApikeyTagJSON, 0, len(tags))
-				for _, t := range tags {
-					result = append(result, ApikeyTagJSON{
+				for _, t := range reqLog.GetAiApikeytags() {
+					lvl := t.GetTaglevel()
+					if lvl < 1 || lvl > 5 {
+						continue
+					}
+					key := fmt.Sprintf("level%d", lvl)
+					result[key] = ApikeyTagJSON{
 						Tagname:  t.GetTagname(),
 						Tagvalue: t.GetTagvalue(),
-					})
+					}
 				}
-				return result
 			}
-			return []ApikeyTagJSON{}
+			return result
 		},
-		isZeroSlice,
+		isZeroObject,
 	)
 
 	registerField("ai_requested_model", "string", false, true,
@@ -732,6 +743,51 @@ func registerAllFields() {
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
 				return reqLog.GetAiTotalTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_cache_read_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiCacheReadTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_cache_write_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiCacheWriteTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_audio_input_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiAudioInputTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_audio_output_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiAudioOutputTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_image_count", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiImageCount()
 			}
 			return int64(0)
 		},
@@ -803,6 +859,15 @@ func registerAllFields() {
 		},
 		isZeroString,
 	)
+	registerField("ai_protocol", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiProtocol()
+			}
+			return ""
+		},
+		isZeroString,
+	)
 	registerField("ai_retry_count", "uint32", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
@@ -811,6 +876,15 @@ func registerAllFields() {
 			return uint32(0)
 		},
 		isZeroUint32,
+	)
+	registerField("ai_mode", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiMode()
+			}
+			return ""
+		},
+		isZeroString,
 	)
 	registerField("ai_cost_value", "int64", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {

@@ -154,14 +154,22 @@ func MakeRequestLog(logid uint64, product bfe_access_pb.ProductID, host, uri, mo
 
 			// AI observability fields.
 			AiApikeyId:       strPtr("key-id-123"),
-			AiApikeytags:     []*bfe_access_pb.ApikeyTag{{Tagname: strPtr("dep"), Tagvalue: strPtr("ops")}, {Tagname: strPtr("team"), Tagvalue: strPtr("bfe")}},
+			AiApikeytags: []*bfe_access_pb.ApikeyTag{
+				{Tagname: strPtr("dep"), Tagvalue: strPtr("ops"), Taglevel: int32Ptr(1)},
+				{Tagname: strPtr("team"), Tagvalue: strPtr("bfe"), Taglevel: int32Ptr(2)},
+			},
 			AiRequestedModel: strPtr(model),
 			AiTargetModel:    strPtr(model + "-mapped"),
 			AiStream:         boolPtr(true),
 			AiInputTokens:    int64Ptr(1000),
 			AiOutputTokens:   int64Ptr(200),
-			AiTotalTokens:    int64Ptr(1200),
-			AiTtftUs:         int64Ptr(50000),
+			AiTotalTokens:        int64Ptr(1200),
+			AiCacheReadTokens:    int64Ptr(500),
+			AiCacheWriteTokens:   int64Ptr(100),
+			AiAudioInputTokens:   int64Ptr(80),
+			AiAudioOutputTokens:  int64Ptr(20),
+			AiImageCount:         int64Ptr(1),
+			AiTtftUs:             int64Ptr(50000),
 			AiTpotUs:         int64Ptr(2500),
 			AiRateLimitHits: []*bfe_access_pb.RateLimitHit{
 				{
@@ -175,6 +183,8 @@ func MakeRequestLog(logid uint64, product bfe_access_pb.ProductID, host, uri, mo
 
 			// AI observability new fields (v0.2.0).
 			AiProvider:      strPtr("openai"),
+			AiProtocol:      strPtr("openai"),
+			AiMode:          strPtr("chat"),
 			AiRetryCount:    uint32Ptr(1),
 			AiCostValue:     int64Ptr(5000),
 			AiCostCurrency:  strPtr("USD"),
@@ -201,3 +211,4 @@ func strPtr(s string) *string    { return &s }
 func uint32Ptr(v uint32) *uint32 { return &v }
 func uint64Ptr(v uint64) *uint64 { return &v }
 func int64Ptr(v int64) *int64    { return &v }
+func int32Ptr(v int32) *int32    { return &v }

@@ -127,20 +127,27 @@
 | 字段名 | 类型 | 含义 | 必需 | 默认 |
 | ------ | ---- | ---- | ---- | ---- |
 | ai_apikey_id | string | API Key 内部标识 | N | Y |
-| ai_apikeytags | []object | API Key 标签列表 | N | Y |
+| ai_apikeytags | object | API Key 标签对象，包含 `level1` ~ `level5` | N | Y |
 | ai_requested_model | string | 请求模型 | N | Y |
 | ai_target_model | string | 实际路由目标模型名 | N | Y |
 | ai_stream | bool | 是否流式请求 | N | Y |
 | ai_input_tokens | int64 | 输入 Token 数 | N | Y |
 | ai_output_tokens | int64 | 输出 Token 数 | N | Y |
 | ai_total_tokens | int64 | 总 Token 数 | N | Y |
+| ai_cache_read_tokens | int64 | 从 cache 读取的 Token 数 | N | Y |
+| ai_cache_write_tokens | int64 | 写入 cache 的 Token 数 | N | Y |
+| ai_audio_input_tokens | int64 | 音频输入 Token 数 | N | Y |
+| ai_audio_output_tokens | int64 | 音频输出 Token 数 | N | Y |
+| ai_image_count | int64 | 图像生成模式下生成的图像张数 | N | Y |
 | ai_ttft_us | int64 | 首 Token 延迟（微秒） | N | Y |
 | ai_tpot_us | int64 | 相邻 Token 生成耗时（微秒） | N | Y |
 | ai_rate_limit_hits | []object | 限流命中记录 | N | Y |
 | ai_auth_reject_reason | string | 认证拒绝原因 | N | Y |
 | ai_auth_reject_quota_plans | []string | 认证拒绝时超限的配额计划 | N | Y |
+| ai_protocol | string | AI 协议风格，如 `openai`、`anthropic` | N | Y |
 | ai_provider | string | 上游模型提供商 | N | Y |
 | ai_retry_count | uint32 | 模型调用层重试次数 | N | Y |
+| ai_mode | string | AI 请求模式，如 `chat`、`image_generation` 等 | N | Y |
 | ai_cost_value | int64 | 成本固定点整数值 | N | Y |
 | ai_cost_currency | string | 成本币种 | N | Y |
 | ai_route_rule_hits | []object | AI 路由规则命中记录 | N | Y |
