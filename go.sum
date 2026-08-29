@@ -1,5 +1,5 @@
-github.com/bfenetworks/bfe v1.8.5 h1:UJCA4SthVQ4Yrkt8NygqCA9sWPlGLipx0w929EAtQSw=
-github.com/bfenetworks/bfe v1.8.5/go.mod h1:1HUaOph1899XtuKTdU/vqgonFfxdqJ66xf9nLtHF+2A=
+github.com/bfenetworks/bfe v1.8.6 h1:9VyzzSJrPrTdDnC27Gvf2VTTJq98GcH5RFcnMb71zCQ=
+github.com/bfenetworks/bfe v1.8.6/go.mod h1:Lsor/cQKQHDXHWsSpJOR84A6/aQqTnyioeGemjPp8og=
 github.com/bfenetworks/bfe-access-pb v0.3.4 h1:CFQlR78Utvb+c2T0pz1KQjZyurgo5tzoSWx4d996rXo=
 github.com/bfenetworks/bfe-access-pb v0.3.4/go.mod h1:3qunybhMV5hEeT/2qDwbchxo4t/9LPKEvwwZkmekRho=
 github.com/bfenetworks/go-lib v0.0.3 h1:504FrMW0qTKTODuUgkVGCy6DORBdZOgC78zGD9LwpKU=
