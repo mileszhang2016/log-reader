@@ -10,6 +10,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.3.0] - 2026-08-31
+
+### Added
+- Register AI observability fields from bfe-access-pb v0.3.5: `ai_image_input_tokens`, `ai_video_count`.
+
+### Changed
+- Upgrade `bfe-access-pb` dependency from v0.3.4 to v0.3.5.
+
+
 ## [v1.2.0] - 2026-08-29
 
 ### Added
@@ -45,7 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config loading system (`reader_conf`) with support for basic and access-pb config types.
 - Built-in Kafka output module (`mod_kafka`) for forwarding parsed access logs to Kafka.
 
-[Unreleased]: https://github.com/bfenetworks/log-reader/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/bfenetworks/log-reader/compare/v1.3.0...HEAD
+[v1.3.0]: https://github.com/bfenetworks/log-reader/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/bfenetworks/log-reader/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/bfenetworks/log-reader/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/bfenetworks/log-reader/releases/tag/v1.0.0

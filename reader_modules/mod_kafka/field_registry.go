@@ -793,6 +793,24 @@ func registerAllFields() {
 		},
 		isZeroInt64,
 	)
+	registerField("ai_image_input_tokens", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiImageInputTokens()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_video_count", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiVideoCount()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
 	registerField("ai_ttft_us", "int64", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {

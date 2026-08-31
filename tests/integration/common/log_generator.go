@@ -169,6 +169,8 @@ func MakeRequestLog(logid uint64, product bfe_access_pb.ProductID, host, uri, mo
 			AiAudioInputTokens:   int64Ptr(80),
 			AiAudioOutputTokens:  int64Ptr(20),
 			AiImageCount:         int64Ptr(1),
+			AiImageInputTokens:   int64Ptr(200),
+			AiVideoCount:         int64Ptr(3),
 			AiTtftUs:             int64Ptr(50000),
 			AiTpotUs:         int64Ptr(2500),
 			AiRateLimitHits: []*bfe_access_pb.RateLimitHit{

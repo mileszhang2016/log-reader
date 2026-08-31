@@ -139,6 +139,8 @@
 | ai_audio_input_tokens | int64 | 音频输入 Token 数 | N | Y |
 | ai_audio_output_tokens | int64 | 音频输出 Token 数 | N | Y |
 | ai_image_count | int64 | 图像生成模式下生成的图像张数 | N | Y |
+| ai_image_input_tokens | int64 | 图片输入 Token 数，已包含在 `ai_input_tokens` 中 | N | Y |
+| ai_video_count | int64 | 视频生成模式下生成的视频数量 | N | Y |
 | ai_ttft_us | int64 | 首 Token 延迟（微秒） | N | Y |
 | ai_tpot_us | int64 | 相邻 Token 生成耗时（微秒） | N | Y |
 | ai_rate_limit_hits | []object | 限流命中记录 | N | Y |
