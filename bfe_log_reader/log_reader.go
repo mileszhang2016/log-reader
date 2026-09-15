@@ -23,7 +23,7 @@ import (
 
 	"github.com/bfenetworks/go-lib/log"
 	"github.com/bfenetworks/go-lib/web-monitor/module_state2"
-	"github.com/bfenetworks/log-reader/reader_module"
+	"github.com/rainway-ai-gateway/log-reader/reader_module"
 )
 
 const (

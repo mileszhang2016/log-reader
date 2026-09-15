@@ -19,7 +19,7 @@ import (
 	"sync"
 
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
-	"github.com/bfenetworks/log-reader/reader_util"
+	"github.com/rainway-ai-gateway/log-reader/reader_util"
 )
 
 // FieldDef describes a JSON output field

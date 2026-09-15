@@ -17,7 +17,7 @@ package cat
 import (
 	"sync"
 
-	"github.com/bfenetworks/log-reader/bfe_log_reader"
+	"github.com/rainway-ai-gateway/log-reader/bfe_log_reader"
 )
 
 func PblogCat(fp string, callback func(result []string)) error {

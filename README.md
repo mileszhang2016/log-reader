@@ -41,7 +41,7 @@ log-reader/
 ├── doc/                     # 设计/配置/字段/变更文档（中文）
 ├── tests/                   # 集成测试（含 mock Kafka broker 的 E2E 场景）
 ├── Makefile                 # 构建 / 测试 / release 目标
-└── go.mod                   # Go module: github.com/bfenetworks/log-reader
+└── go.mod                   # Go module: github.com/rainway-ai-gateway/log-reader
 ```
 
 ## 环境要求
@@ -55,7 +55,7 @@ log-reader/
 ### 1. 获取代码并编译
 
 ```sh
-git clone https://github.com/bfenetworks/log-reader.git
+git clone https://github.com/rainway-ai-gateway/log-reader.git
 cd log-reader
 
 # 编译 daemon（等价于: prepare → test → build → package）

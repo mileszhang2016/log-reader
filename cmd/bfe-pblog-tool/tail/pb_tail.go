@@ -22,7 +22,7 @@ import (
 	"time"
 
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
-	"github.com/bfenetworks/log-reader/bfe_log_reader"
+	"github.com/rainway-ai-gateway/log-reader/bfe_log_reader"
 )
 
 // Default values and caps for tail behavior.

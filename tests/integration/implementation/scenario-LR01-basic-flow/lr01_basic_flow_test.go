@@ -24,7 +24,7 @@ import (
 	"time"
 
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
-	"github.com/bfenetworks/log-reader/tests/integration/common"
+	"github.com/rainway-ai-gateway/log-reader/tests/integration/common"
 )
 
 // testEnv holds all resources for a single LR01 integration test.

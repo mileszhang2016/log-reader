@@ -24,8 +24,8 @@ import (
 	"github.com/bfenetworks/go-lib/web-monitor/web_monitor"
 
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
-	"github.com/bfenetworks/log-reader/reader_conf"
-	"github.com/bfenetworks/log-reader/reader_module"
+	"github.com/rainway-ai-gateway/log-reader/reader_conf"
+	"github.com/rainway-ai-gateway/log-reader/reader_module"
 )
 
 var COUNTER_KEYS = []string{

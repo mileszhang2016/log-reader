@@ -17,7 +17,7 @@ package reader_modules
 import (
 	"testing"
 
-	"github.com/bfenetworks/log-reader/reader_module"
+	"github.com/rainway-ai-gateway/log-reader/reader_module"
 )
 
 func TestSetModules(t *testing.T) {
