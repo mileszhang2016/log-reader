@@ -19,7 +19,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/bfenetworks/log-reader/cmd/bfe-pblog-tool/common"
+	"github.com/rainway-ai-gateway/log-reader/cmd/bfe-pblog-tool/common"
 	"github.com/urfave/cli"
 )
 

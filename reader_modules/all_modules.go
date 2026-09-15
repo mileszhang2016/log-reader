@@ -15,8 +15,8 @@
 package reader_modules
 
 import (
-	"github.com/bfenetworks/log-reader/reader_module"
-	"github.com/bfenetworks/log-reader/reader_modules/mod_kafka"
+	"github.com/rainway-ai-gateway/log-reader/reader_module"
+	"github.com/rainway-ai-gateway/log-reader/reader_modules/mod_kafka"
 )
 
 func SetModules() {

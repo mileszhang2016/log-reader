@@ -1,4 +1,4 @@
-module github.com/bfenetworks/log-reader
+module github.com/rainway-ai-gateway/log-reader
 
 go 1.22
 

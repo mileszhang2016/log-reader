@@ -18,12 +18,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bfenetworks/log-reader/cmd/bfe-pblog-tool/common"
+	"github.com/rainway-ai-gateway/log-reader/cmd/bfe-pblog-tool/common"
 	"github.com/urfave/cli"
 
-	_ "github.com/bfenetworks/log-reader/cmd/bfe-pblog-tool/cat"
+	_ "github.com/rainway-ai-gateway/log-reader/cmd/bfe-pblog-tool/cat"
 
-	_ "github.com/bfenetworks/log-reader/cmd/bfe-pblog-tool/tail"
+	_ "github.com/rainway-ai-gateway/log-reader/cmd/bfe-pblog-tool/tail"
 )
 
 var (
@@ -37,7 +37,7 @@ func init() {
 	}
 	app.Name = os.Args[0]
 	app.Usage = "BFE protobuf access log reader"
-	app.Description = "https://github.com/bfenetworks/log-reader"
+	app.Description = "https://github.com/rainway-ai-gateway/log-reader"
 	app.Version = version
 	app.Commands = common.Cmds
 	app.Action = func(ctx *cli.Context) error {

@@ -16,8 +16,8 @@ package bfe_log_reader
 
 import (
 	"github.com/bfenetworks/go-lib/log"
-	"github.com/bfenetworks/log-reader/reader_conf"
-	"github.com/bfenetworks/log-reader/reader_module"
+	"github.com/rainway-ai-gateway/log-reader/reader_conf"
+	"github.com/rainway-ai-gateway/log-reader/reader_module"
 )
 
 // registerModules registers modules from a string list, parsing "mod_name:enabled" format

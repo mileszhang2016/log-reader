@@ -237,7 +237,7 @@ func findRepoRoot() (string, error) {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			module, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 			if err == nil {
-				if string(module[:30]) == "module github.com/bfenetworks" || contains(string(module), "github.com/bfenetworks/log-reader") {
+				if string(module[:30]) == "module github.com/bfenetworks" || contains(string(module), "github.com/rainway-ai-gateway/log-reader") {
 					return dir, nil
 				}
 			}

@@ -26,10 +26,10 @@ import (
 
 	"github.com/bfenetworks/go-lib/log"
 	"github.com/bfenetworks/go-lib/log/log4go"
-	"github.com/bfenetworks/log-reader/bfe_log_reader"
-	"github.com/bfenetworks/log-reader/reader_conf"
-	"github.com/bfenetworks/log-reader/reader_module"
-	"github.com/bfenetworks/log-reader/reader_modules"
+	"github.com/rainway-ai-gateway/log-reader/bfe_log_reader"
+	"github.com/rainway-ai-gateway/log-reader/reader_conf"
+	"github.com/rainway-ai-gateway/log-reader/reader_module"
+	"github.com/rainway-ai-gateway/log-reader/reader_modules"
 )
 
 var (

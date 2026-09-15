@@ -17,7 +17,7 @@ package bfe_log_reader
 import (
 	"testing"
 
-	"github.com/bfenetworks/log-reader/reader_conf"
+	"github.com/rainway-ai-gateway/log-reader/reader_conf"
 )
 
 func TestNewBfeLogReader(t *testing.T) {
