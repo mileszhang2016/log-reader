@@ -1,3 +1,17 @@
+// Copyright(c) 2026 The Rainway AI Gateway (壬远AI网关) Authors.
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 // Copyright (c) 2026 The BFE Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +33,7 @@ import (
 	"os"
 
 	"github.com/bfenetworks/go-lib/log"
+	"github.com/rainway-ai-gateway/log-reader/reader_modules/mod_fields"
 	gcfg "gopkg.in/gcfg.v1"
 )
 
@@ -57,7 +72,7 @@ func (c *KafkaDataConfig) ResolveFields() *OutputFields {
 	fieldSet := make(map[string]bool)
 
 	// always include required fields
-	for _, name := range RequiredFields() {
+	for _, name := range mod_fields.RequiredFields() {
 		fieldSet[name] = true
 	}
 
@@ -71,12 +86,12 @@ func (c *KafkaDataConfig) ResolveFields() *OutputFields {
 		// only required fields, already added above
 
 	case "default":
-		for _, name := range DefaultFields() {
+		for _, name := range mod_fields.DefaultFields() {
 			fieldSet[name] = true
 		}
 
 	case "all":
-		for _, f := range AllFields() {
+		for _, f := range mod_fields.AllFields() {
 			fieldSet[f.Name] = true
 		}
 
@@ -85,7 +100,7 @@ func (c *KafkaDataConfig) ResolveFields() *OutputFields {
 			if name == "" {
 				continue
 			}
-			if !IsValidField(name) {
+			if !mod_fields.IsValidField(name) {
 				log.Logger.Warn("kafka_data_config: unknown field %q, ignored", name)
 				continue
 			}
@@ -94,7 +109,7 @@ func (c *KafkaDataConfig) ResolveFields() *OutputFields {
 
 	default:
 		log.Logger.Warn("kafka_data_config: unknown FieldMode %q, fallback to default", mode)
-		for _, name := range DefaultFields() {
+		for _, name := range mod_fields.DefaultFields() {
 			fieldSet[name] = true
 		}
 	}
@@ -105,7 +120,7 @@ func (c *KafkaDataConfig) ResolveFields() *OutputFields {
 // DefaultOutputFields returns OutputFields with the default field set
 func DefaultOutputFields() *OutputFields {
 	fieldSet := make(map[string]bool)
-	for _, name := range DefaultFields() {
+	for _, name := range mod_fields.DefaultFields() {
 		fieldSet[name] = true
 	}
 	return &OutputFields{Set: fieldSet}
