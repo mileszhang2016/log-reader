@@ -16,6 +16,7 @@ log-reader/tests/integration/
 ├── README.md                                  # 本文档
 ├── common/                                    # 公共 harness
 │   ├── mock_kafka.go                          # 模拟 Kafka Broker
+│   ├── mysql_env.go                           # MySQL 测试环境（LR_MYSQL_DSN / testcontainers / skip）
 │   ├── log_generator.go                       # 生成 b2log 格式日志
 │   ├── process_env.go                         # 编译/启动/停止 log-reader 进程
 │   ├── config_builder.go                      # 生成临时 log-reader 配置
@@ -56,6 +57,10 @@ go test ./tests/integration/implementation/scenario-LR01-basic-flow/ -run TestLR
 | LR01 Require 字段模式 | 验证 `require` 模式仅输出 22 个必需字段 |
 | LR01 JSON 结构稳定性 | 验证同一条消息多次解析结果一致 |
 | LR02 CLI 工具 | 验证 bfe-pblog-tool 的 cat/tail 子命令在各种参数组合下的输出正确性，包括行号显示、指定条数、跟随模式、空文件与错误路径 |
+| LR03 基本写入 | 验证 mod_log_mysql 将请求日志按 89 列清单写入 MySQL：逐列断言标量/布尔 TINYINT/JSON 列/标签打平/log_time，覆盖字符串零值→NULL 规则 |
+| LR03 幂等重放 | 验证同唯一键日志重发与 log-reader 重启 `-b` 补读时不产生重复行、冲突值被覆盖 |
+| LR03 零值规则 | 验证字符串零值与空结构→NULL、布尔/数值零值→0，以及未认证请求（ai_apikey_id 为 NULL）可正常写入 |
+| LR03 批次拆分 | 验证日志量超过 MaxSizePerBatch(10) 与 BatchSize(5) 时多批次处理不丢行、不串值 |
 
 ## Mock 说明
 
@@ -72,6 +77,16 @@ go test ./tests/integration/implementation/scenario-LR01-basic-flow/ -run TestLR
 - `Produce`
 
 收到的 `Produce` 消息会被解析并保存，测试代码通过 `WaitForMessages` 等待并校验消息内容。
+
+### MySQL 环境（LR03）
+
+LR03 使用真实 MySQL（不用 SQLite 替代：`ON DUPLICATE KEY UPDATE` 与表分区均为 MySQL 专有，方言差异会造成假阳性）。`common.MysqlEnv` 按优先级选择实例：
+
+1. 环境变量 `LR_MYSQL_DSN`（如 `root:****@tcp(127.0.0.1:3306)/`，凭据需具备 CREATE/DROP DATABASE 权限）；测试创建专用随机名数据库并在结束后 DROP，不使用 DSN 中自带的数据库名；
+2. testcontainers 启动 `mysql:8.0` 容器（需本机 Docker 可用）；
+3. 都不可用则 `t.Skip`。
+
+表结构由场景 testdata 内嵌 DDL 副本初始化（`scenario-LR03-mysql-write/testdata/ddl/bfe_ai_request_log.sql`，副本头注释注明与权威 DDL 的偏差）。
 
 ## 参考文档
 
@@ -94,6 +109,11 @@ go test ./tests/integration/implementation/scenario-LR01-basic-flow/ -run TestLR
 - `测试设计文档/scenario-LR02-cli-tool/TC-07-tail不存在的文件.md`
 - `测试设计文档/scenario-LR02-cli-tool/TC-08-tail空文件.md`
 - `测试设计文档/scenario-LR02-cli-tool/TC-09-tail跟随新增数据.md`
+- `测试设计文档/scenario-LR03-mysql-write/场景说明.md`
+- `测试设计文档/scenario-LR03-mysql-write/TC-01-基本写入全字段校验.md`
+- `测试设计文档/scenario-LR03-mysql-write/TC-02-幂等重放.md`
+- `测试设计文档/scenario-LR03-mysql-write/TC-03-零值规则.md`
+- `测试设计文档/scenario-LR03-mysql-write/TC-04-批次拆分.md`
 - `../doc/configuration/config.md`
 - `../doc/configuration/mod_kafka/mod_kafka.conf.md`
 - `../doc/configuration/mod_kafka/kafka_config.data.md`

@@ -1,3 +1,17 @@
+// Copyright(c) 2026 The Rainway AI Gateway (壬远AI网关) Authors.
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 // Copyright (c) 2026 The BFE Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,10 +56,16 @@ type LogReaderConfigBuilder struct {
 	TargetConfDir string
 	KafkaBroker   string
 	LogFilePath   string
+
+	// MySQL connection placeholders, used by mod_log_mysql scenarios.
+	MysqlAddr     string
+	MysqlUser     string
+	MysqlPassword string
+	MysqlDBName   string
 }
 
 // Build copies the static testdata templates into TargetConfDir and injects
-// dynamic values (Kafka broker, log file path).
+// dynamic values (Kafka broker, log file path, MySQL connection).
 func (b *LogReaderConfigBuilder) Build() error {
 	if err := copyDirContents(b.TemplateDir, b.TargetConfDir); err != nil {
 		return fmt.Errorf("copy testdata failed: %w", err)
@@ -54,8 +74,12 @@ func (b *LogReaderConfigBuilder) Build() error {
 	// Replace placeholders in config files.
 	// Use forward slashes for paths to avoid gcfg interpreting backslashes as escapes.
 	replacements := map[string]string{
-		"{{KAFKA_BROKER}}": b.KafkaBroker,
-		"{{LOG_FILE}}":     filepath.ToSlash(b.LogFilePath),
+		"{{KAFKA_BROKER}}":   b.KafkaBroker,
+		"{{LOG_FILE}}":       filepath.ToSlash(b.LogFilePath),
+		"{{MYSQL_ADDR}}":     b.MysqlAddr,
+		"{{MYSQL_USER}}":     b.MysqlUser,
+		"{{MYSQL_PASSWORD}}": b.MysqlPassword,
+		"{{MYSQL_DB}}":       b.MysqlDBName,
 	}
 
 	if err := replacePlaceholders(b.TargetConfDir, replacements); err != nil {

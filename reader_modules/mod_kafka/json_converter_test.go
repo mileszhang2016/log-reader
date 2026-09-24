@@ -1,3 +1,17 @@
+// Copyright(c) 2026 The Rainway AI Gateway (壬远AI网关) Authors.
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 // Copyright (c) 2026 The BFE Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +31,94 @@ package mod_kafka
 import (
 	"encoding/json"
 	"testing"
+
+	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
+	"github.com/rainway-ai-gateway/log-reader/reader_modules/mod_fields"
 )
+
+// makeBfeLog builds a BfeLog with typical request fields for converter tests.
+// This is a package-local copy of the test helper (the shared one moved to mod_fields).
+func makeBfeLog() *bfe_access_pb.BfeLog {
+	logid := uint64(12345)
+	timestamp := uint64(1782353290)
+	product := bfe_access_pb.ProductID_BFE
+	logTag := "req_BFE"
+
+	return &bfe_access_pb.BfeLog{
+		Product:   &product,
+		Timestamp: &timestamp,
+		Logid:     &logid,
+		LogTag:    &logTag,
+		LogType:   bfe_access_pb.BfeLogType_Request.Enum(),
+		RequestLog: &bfe_access_pb.RequestLog{
+			ErrCode:            strPtr(""),
+			ErrMsg:             strPtr(""),
+			ReqHeaderLen:       uint32Ptr(189),
+			ReqBodyLen:         uint32Ptr(0),
+			ClientIp:           uint32Ptr(0x0A000001), // 10.0.0.1
+			ReqNum:             uint32Ptr(1),
+			Proto:              strPtr("HTTP/1.1"),
+			HeaderHost:         strPtr("example.com"),
+			OriginUri:          strPtr("/api/v1/test"),
+			Method:             strPtr("POST"),
+			ContentType:        strPtr("application/json"),
+			Cluster:            strPtr("cluster_ai"),
+			SubCluster:         strPtr("pool_bj"),
+			BackendInfo:        &bfe_access_pb.InstanceInfo{IpAddr: uint32Ptr(0x0A000002), Port: uint32Ptr(8080)},
+			BackendRetry:       uint32Ptr(0),
+			ResStatusCode:      uint32Ptr(200),
+			ResHeaderLen:       uint32Ptr(154),
+			ResBodyLen:         uint32Ptr(459),
+			ResContentType:     strPtr("application/json"),
+			AllTime:            uint32Ptr(11),
+			ReadClientTime:     uint32Ptr(2),
+			ClusterServeTime:   uint32Ptr(5),
+			BackendServeTime:   uint32Ptr(4),
+			WriteClientTime:    uint32Ptr(1),
+			SessionOffsetTime:  uint32Ptr(9),
+			ConnectBackendTime: uint32Ptr(1),
+			ProxyDelayTime:     uint32Ptr(3),
+			AiApikeyId:         strPtr("key-id-123"),
+			AiApikeytags: []*bfe_access_pb.ApikeyTag{
+				{Tagname: strPtr("dep"), Tagvalue: strPtr("ops"), Taglevel: int32Ptr(1)},
+				{Tagname: strPtr("team"), Tagvalue: strPtr("bfe"), Taglevel: int32Ptr(2)},
+			},
+			AiRequestedModel:   strPtr("test-model"),
+			AiTargetModel:      strPtr("gpt-5"),
+			AiStream:           boolPtr(false),
+			AiInputTokens:      int64Ptr(34),
+			AiOutputTokens:     int64Ptr(182),
+			AiTotalTokens:      int64Ptr(216),
+			AiTtftUs:           int64Ptr(5486),
+			AiTpotUs:           int64Ptr(3),
+			AiProvider:         strPtr("openai"),
+			AiRetryCount:       uint32Ptr(1),
+			AiCostValue:        int64Ptr(5000),
+			AiCostCurrency:     strPtr("USD"),
+			AiRouteRuleHits: []*bfe_access_pb.AIRouteRuleHit{
+				{
+					RuleOwner:     strPtr("ak_user_a"),
+					RuleOwnerType: strPtr("apikey"),
+					RuleName:      strPtr("user_a-rule1"),
+				},
+			},
+			AiClusterKeyNames: []*bfe_access_pb.ClusterKeyName{
+				{
+					ClusterName: strPtr("cluster-a"),
+					KeyName:     strPtr("key-001"),
+				},
+			},
+			AiAuthHitQuotaPlans: []string{"hit-plan-a"},
+		},
+	}
+}
+
+func strPtr(s string) *string    { return &s }
+func uint32Ptr(v uint32) *uint32 { return &v }
+func uint64Ptr(v uint64) *uint64 { return &v }
+func int64Ptr(v int64) *int64    { return &v }
+func int32Ptr(v int32) *int32    { return &v }
+func boolPtr(v bool) *bool       { return &v }
 
 func TestConvertBfeLogToJSON_DefaultFields(t *testing.T) {
 	log := makeBfeLog()
@@ -70,7 +171,7 @@ func TestConvertBfeLogToJSON_RequireFields(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	required := RequiredFields()
+	required := mod_fields.RequiredFields()
 	for _, name := range required {
 		// empty-string / zero-value required fields are omitted by omitempty behavior
 		if name == "err_code" || name == "err_msg" || name == "req_body_len" {
@@ -151,7 +252,7 @@ func TestConvertBfeLogToJSON_CustomizedFields(t *testing.T) {
 		t.Errorf("ai_auth_hit_quota_plans: expected [hit-plan-a], got %v", result["ai_auth_hit_quota_plans"])
 	}
 
-	for _, name := range RequiredFields() {
+	for _, name := range mod_fields.RequiredFields() {
 		// empty-string / zero-value required fields are omitted by omitempty behavior
 		if name == "err_code" || name == "err_msg" || name == "req_body_len" {
 			continue
@@ -198,7 +299,7 @@ func TestConvertBfeLogToJSON_NilOutputFields(t *testing.T) {
 	}
 
 	// default fields minus zero-value fields omitted by omitempty
-	expectedMin := len(DefaultFields()) - 16
+	expectedMin := len(mod_fields.DefaultFields()) - 16
 	if len(result) < expectedMin {
 		t.Fatalf("expected at least %d fields (some may be zero), got %d", expectedMin, len(result))
 	}

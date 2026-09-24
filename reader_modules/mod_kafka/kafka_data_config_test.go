@@ -1,3 +1,17 @@
+// Copyright(c) 2026 The Rainway AI Gateway (壬远AI网关) Authors.
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
+//
+//Unless required by applicable law or agreed to in writing, software
+//distributed under the License is distributed on an "AS IS" BASIS,
+//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//See the License for the specific language governing permissions and
+//limitations under the License.
+
 // Copyright (c) 2026 The BFE Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +32,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/rainway-ai-gateway/log-reader/reader_modules/mod_fields"
 )
 
 func writeTempFile(t *testing.T, content string) string {
@@ -50,7 +66,7 @@ func TestLoadKafkaDataConfig_EmptyFile(t *testing.T) {
 		t.Fatal("expected non-nil config")
 	}
 	of := cfg.ResolveFields()
-	expectedCount := len(DefaultFields())
+	expectedCount := len(mod_fields.DefaultFields())
 	if len(of.Set) != expectedCount {
 		t.Fatalf("expected %d fields (default + extra required), got %d", expectedCount, len(of.Set))
 	}
@@ -63,7 +79,7 @@ func TestResolveFields_Require(t *testing.T) {
 		},
 	}
 	of := cfg.ResolveFields()
-	required := RequiredFields()
+	required := mod_fields.RequiredFields()
 	if len(of.Set) != len(required) {
 		t.Fatalf("expected %d required fields, got %d", len(required), len(of.Set))
 	}
@@ -82,7 +98,7 @@ func TestResolveFields_Default(t *testing.T) {
 	}
 	of := cfg.ResolveFields()
 	// default (48) = 48
-	expectedCount := len(DefaultFields())
+	expectedCount := len(mod_fields.DefaultFields())
 	if len(of.Set) != expectedCount {
 		t.Fatalf("expected %d fields, got %d", expectedCount, len(of.Set))
 	}
@@ -95,7 +111,7 @@ func TestResolveFields_All(t *testing.T) {
 		},
 	}
 	of := cfg.ResolveFields()
-	all := AllFields()
+	all := mod_fields.AllFields()
 	if len(of.Set) != len(all) {
 		t.Fatalf("expected %d fields, got %d", len(all), len(of.Set))
 	}
@@ -129,7 +145,7 @@ func TestResolveFields_Customized(t *testing.T) {
 		t.Error("expected referrer in output")
 	}
 
-	for _, name := range RequiredFields() {
+	for _, name := range mod_fields.RequiredFields() {
 		if !of.Set[name] {
 			t.Errorf("required field %q not in output", name)
 		}
@@ -148,7 +164,7 @@ func TestResolveFields_CustomizedEmptyNames(t *testing.T) {
 		},
 	}
 	of := cfg.ResolveFields()
-	required := RequiredFields()
+	required := mod_fields.RequiredFields()
 	if len(of.Set) != len(required) {
 		t.Fatalf("expected %d required fields (empty customized), got %d", len(required), len(of.Set))
 	}
@@ -163,7 +179,7 @@ func TestResolveFields_DuplicateNames(t *testing.T) {
 	}
 	of := cfg.ResolveFields()
 	count := 0
-	for _, name := range RequiredFields() {
+	for _, name := range mod_fields.RequiredFields() {
 		if name == "ai_apikey_id" {
 			continue
 		}
@@ -183,7 +199,7 @@ func TestResolveFields_UnknownFieldMode(t *testing.T) {
 		},
 	}
 	of := cfg.ResolveFields()
-	expectedCount := len(DefaultFields())
+	expectedCount := len(mod_fields.DefaultFields())
 	if len(of.Set) != expectedCount {
 		t.Fatalf("expected fallback to default (%d fields), got %d", expectedCount, len(of.Set))
 	}
@@ -212,7 +228,7 @@ func TestResolveFields_EmptyMode(t *testing.T) {
 		},
 	}
 	of := cfg.ResolveFields()
-	expectedCount := len(DefaultFields())
+	expectedCount := len(mod_fields.DefaultFields())
 	if len(of.Set) != expectedCount {
 		t.Fatalf("expected default for empty mode (%d fields), got %d", expectedCount, len(of.Set))
 	}
@@ -220,7 +236,7 @@ func TestResolveFields_EmptyMode(t *testing.T) {
 
 func TestDefaultOutputFields(t *testing.T) {
 	of := DefaultOutputFields()
-	def := DefaultFields()
+	def := mod_fields.DefaultFields()
 	if len(of.Set) != len(def) {
 		t.Fatalf("DefaultOutputFields: expected %d, got %d", len(def), len(of.Set))
 	}
