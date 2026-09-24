@@ -10,6 +10,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.4.0] - 2026-09-24
+
+### Added
+- Add `mod_log_mysql` module: batch idempotent write (`INSERT ... ON DUPLICATE KEY UPDATE`) of AI access logs to the MySQL table `bfe_ai_request_log` (89 columns), with a queue + single-writer goroutine and backoff retry.
+- Extract shared protobuf field extraction into `reader_modules/mod_fields`, reused by `mod_kafka` (API kept via type aliases) and `mod_log_mysql`.
+- Add integration test scenario LR03 (basic write, idempotent replay, zero-value-to-null, batch split) against real MySQL via `LR_MYSQL_DSN` or testcontainers; add module doc, sys_design docs, and `conf/mod_log_mysql/mod_log_mysql.conf` template.
+
+### Changed
+- Rename the module from `github.com/bfenetworks/log-reader` to `github.com/rainway-ai-gateway/log-reader`.
+
+
 ## [v1.3.0] - 2026-08-31
 
 ### Added
@@ -54,7 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config loading system (`reader_conf`) with support for basic and access-pb config types.
 - Built-in Kafka output module (`mod_kafka`) for forwarding parsed access logs to Kafka.
 
-[Unreleased]: https://github.com/bfenetworks/log-reader/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/rainway-ai-gateway/log-reader/compare/v1.4.0...HEAD
+[v1.4.0]: https://github.com/rainway-ai-gateway/log-reader/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/bfenetworks/log-reader/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/bfenetworks/log-reader/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/bfenetworks/log-reader/compare/v1.0.0...v1.1.0
