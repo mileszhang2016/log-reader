@@ -187,10 +187,14 @@ ALTER TABLE bfe_ai_request_log
 2. **新增 `kindNotNullStr` 写入类型**：DDL 中 7 个新字符串列为
    `NOT NULL DEFAULT ''`，既有 `kindScalar` 会把空串映射为 NULL（触发
    Error 1048），故 mapper 新增该 kind，空串原样写入。
-3. **零值语义（TC-05 锁定）**：新字符串列空串写 `''`（不写 NULL）；
-   `ai_intent_confidence`/`ai_intent_latency_us`/`ai_intent_cache_hit` 虽
-   DDL 可空，但沿用既有数值列零值规则（mapper 无法区分"未设置"与"显式 0"），
-   写 0 不写 NULL。
+3. **零值语义（最终决策，与 ai-gateway-api report.md 契约对齐，null=未求值）**：
+   新字符串列空串写 `''`（不写 NULL）；`ai_intent_confidence`/
+   `ai_intent_latency_us`/`ai_intent_cache_hit` 三个可空数值列改为 **proto
+   指针判空**（mapper 新增 `kindOptionalNum`，`extractOptionalNum` 直接检查
+   RequestLog 的 optional 指针）：未设置（指针 nil）→ 写 NULL（= 未求值），
+   显式置 0 → 写 0，消费侧可区分"求值为零"与"未求值"。ttft/tpot 等既有数值列
+   保持历史 0 口径不动。LR03 TC-05 已按此锁定：Part 2 缺省形态断言 NULL，
+   Part 3 显式置 0 断言写 0。
 4. **output-fields.md 统计修正存量偏差**：修正后 BfeLog 顶层 5/4/4、客户端
    连接 4/1/1（删除未注册的 `client_ip6` 行）、请求头 14/4/10、时间信息
    8/6/7、AI 可观测 39、总 92 字段 / 74 Default（非机械 +10）。

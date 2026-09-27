@@ -61,7 +61,7 @@ go test ./tests/integration/implementation/scenario-LR01-basic-flow/ -run TestLR
 | LR03 幂等重放 | 验证同唯一键日志重发与 log-reader 重启 `-b` 补读时不产生重复行、冲突值被覆盖 |
 | LR03 零值规则 | 验证字符串零值与空结构→NULL、布尔/数值零值→0，以及未认证请求（ai_apikey_id 为 NULL）可正常写入 |
 | LR03 批次拆分 | 验证日志量超过 MaxSizePerBatch(10) 与 BatchSize(5) 时多批次处理不丢行、不串值 |
-| LR03 新字段写入与零值规则 | 验证 ai-cache/流量镜像/ai-intent 10 新列全字段写入精确取值（浮点列、bool→TINYINT 转换）与缺省形态（NOT NULL 字符串列→空串，布尔/数值列→0） |
+| LR03 新字段写入与零值规则 | 验证 ai-cache/流量镜像/ai-intent 10 新列全字段写入精确取值（浮点列、bool→TINYINT 转换）与缺省形态（NOT NULL 字符串列→空串，mirror_hit→0，三个可空意图数值列→NULL=未求值；显式置 0→写 0 可区分） |
 
 ## Mock 说明
 

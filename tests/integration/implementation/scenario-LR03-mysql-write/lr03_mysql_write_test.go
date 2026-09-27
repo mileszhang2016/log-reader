@@ -633,11 +633,28 @@ func TestLR03_NewFieldsWriteAndZeroRules(t *testing.T) {
 		t.Errorf("ai_intent_questions_version = %q, want \"\"", zr.aiIntentQuestionsVersion)
 	}
 
-	// bool TINYINT and numeric columns: 0, never NULL (mapper zero-value rule).
+	// bool TINYINT and numeric columns: mirror_hit (NOT NULL) is 0; the three
+	// nullable optional columns are NULL when unset (proto pointer nil = 未求值).
 	if zr.mirrorHit != 0 {
 		t.Errorf("mirror_hit = %d, want 0", zr.mirrorHit)
 	}
-	assertNullInt(t, zr.aiIntentLatencyUs, "ai_intent_latency_us", 0)
-	assertNullInt(t, zr.aiIntentCacheHit, "ai_intent_cache_hit", 0)
-	assertNullFloat(t, zr.aiIntentConfidence, "ai_intent_confidence", 0)
+	assertNull(t, zr.aiIntentLatencyUs.Valid, "ai_intent_latency_us")
+	assertNull(t, zr.aiIntentCacheHit.Valid, "ai_intent_cache_hit")
+	assertNull(t, zr.aiIntentConfidence.Valid, "ai_intent_confidence")
+
+	// Part 3: optional columns explicitly set to zero values -> written as 0
+	// (not NULL), so the consumer can distinguish "evaluated to zero" from
+	// "not evaluated" (NULL).
+	explicit := common.MakeRequestLog(82003, bfe_access_pb.ProductID_BFE,
+		"intent.example.org", "/v1/chat", "intent-explicit-zero-model")
+	explicit.RequestLog.AiIntentConfidence = proto.Float64(0)
+	explicit.RequestLog.AiIntentLatencyUs = proto.Int64(0)
+	explicit.RequestLog.AiIntentCacheHit = proto.Bool(false)
+	e.logGen.MustWriteBfeLog(t, explicit)
+	e.waitRows(3, 20*time.Second)
+
+	er := e.queryRowByLogid(82003)
+	assertNullFloat(t, er.aiIntentConfidence, "ai_intent_confidence", 0)
+	assertNullInt(t, er.aiIntentLatencyUs, "ai_intent_latency_us", 0)
+	assertNullInt(t, er.aiIntentCacheHit, "ai_intent_cache_hit", 0)
 }

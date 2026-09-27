@@ -400,6 +400,13 @@ func TestToRow_NilRequestLog(t *testing.T) {
 	if v := row[idx["mirror_hit"]]; v != int64(0) {
 		t.Errorf("mirror_hit should be int64(0) without RequestLog, got %v", v)
 	}
+	// optional numeric columns -> NULL without RequestLog.
+	if v := row[idx["ai_intent_confidence"]]; v != nil {
+		t.Errorf("ai_intent_confidence should be NULL without RequestLog, got %v", v)
+	}
+	if v := row[idx["ai_intent_cache_hit"]]; v != nil {
+		t.Errorf("ai_intent_cache_hit should be NULL without RequestLog, got %v", v)
+	}
 	if v := row[idx["log_time"]]; !v.(time.Time).Equal(time.Unix(100, 0)) {
 		t.Errorf("log_time = %v, want %v", v, time.Unix(100, 0))
 	}
@@ -463,8 +470,9 @@ func TestToRow_CacheMirrorIntentFields(t *testing.T) {
 }
 
 // TestToRow_CacheMirrorIntentZeroForm asserts the default form when the new
-// fields are unset: NOT NULL string columns are "" (not NULL), bool/numeric
-// columns are 0 (not NULL).
+// fields are unset: NOT NULL string columns are "" (not NULL), mirror_hit is
+// 0 (NOT NULL TINYINT), and the three nullable optional columns
+// (confidence/latency_us/cache_hit) are NULL (proto pointer nil = 未设置).
 func TestToRow_CacheMirrorIntentZeroForm(t *testing.T) {
 	mapper := NewFieldMapper()
 	log := makeBfeLog()
@@ -493,15 +501,41 @@ func TestToRow_CacheMirrorIntentZeroForm(t *testing.T) {
 			t.Errorf("%s = %v (%T), want \"\" (NOT NULL column)", col, v, v)
 		}
 	}
-	for _, col := range []string{"mirror_hit", "ai_intent_cache_hit"} {
-		if v := row[idx[col]]; v != int64(0) {
-			t.Errorf("%s = %v (%T), want int64(0)", col, v, v)
+	// mirror_hit is a NOT NULL TINYINT column: unset -> 0.
+	if v := row[idx["mirror_hit"]]; v != int64(0) {
+		t.Errorf("mirror_hit = %v (%T), want int64(0)", v, v)
+	}
+	// Nullable optional columns: unset -> NULL.
+	for _, col := range []string{"ai_intent_confidence", "ai_intent_latency_us", "ai_intent_cache_hit"} {
+		if v := row[idx[col]]; v != nil {
+			t.Errorf("%s = %v (%T), want nil (NULL, optional unset)", col, v, v)
 		}
 	}
+}
+
+// TestToRow_OptionalNumSetZeroKept asserts explicitly-set zero values on the
+// optional columns are written as 0 (not NULL): pointer set -> value, so the
+// consumer can distinguish "evaluated to zero" from "not evaluated" (NULL).
+func TestToRow_OptionalNumSetZeroKept(t *testing.T) {
+	mapper := NewFieldMapper()
+	log := makeBfeLog()
+	log.RequestLog.AiIntentConfidence = float64Ptr(0)
+	log.RequestLog.AiIntentLatencyUs = int64Ptr(0)
+	log.RequestLog.AiIntentCacheHit = boolPtr(false)
+
+	row, err := mapper.ToRow(log)
+	if err != nil {
+		t.Fatalf("ToRow failed: %v", err)
+	}
+	idx := columnIndex(t)
+
 	if v := row[idx["ai_intent_confidence"]]; v != float64(0) {
-		t.Errorf("ai_intent_confidence = %v (%T), want float64(0)", v, v)
+		t.Errorf("ai_intent_confidence = %v (%T), want float64(0) (set, not NULL)", v, v)
 	}
 	if v := row[idx["ai_intent_latency_us"]]; v != int64(0) {
-		t.Errorf("ai_intent_latency_us = %v (%T), want int64(0)", v, v)
+		t.Errorf("ai_intent_latency_us = %v (%T), want int64(0) (set, not NULL)", v, v)
+	}
+	if v := row[idx["ai_intent_cache_hit"]]; v != int64(0) {
+		t.Errorf("ai_intent_cache_hit = %v (%T), want int64(0) (set false, not NULL)", v, v)
 	}
 }
