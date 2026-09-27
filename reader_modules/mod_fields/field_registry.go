@@ -197,6 +197,11 @@ func isZeroInt64(v interface{}) bool {
 	return !ok || n == 0
 }
 
+func isZeroFloat64(v interface{}) bool {
+	n, ok := v.(float64)
+	return !ok || n == 0
+}
+
 func isZeroBool(v interface{}) bool {
 	b, ok := v.(bool)
 	return !ok || !b
@@ -997,6 +1002,98 @@ func registerAllFields() {
 			return []string{}
 		},
 		isZeroSlice,
+	)
+
+	// === AI cache / traffic mirroring / AI intent fields (v0.3.7/3.8/3.9) ===
+	registerField("ai_cache_status", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiCacheStatus()
+			}
+			return ""
+		},
+		isZeroString,
+	)
+	registerField("ai_intent_question", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiIntentQuestion()
+			}
+			return ""
+		},
+		isZeroString,
+	)
+	registerField("ai_intent_answer", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiIntentAnswer()
+			}
+			return ""
+		},
+		isZeroString,
+	)
+	registerField("ai_intent_confidence", "float64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiIntentConfidence()
+			}
+			return float64(0)
+		},
+		isZeroFloat64,
+	)
+	registerField("ai_intent_source", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiIntentSource()
+			}
+			return ""
+		},
+		isZeroString,
+	)
+	registerField("ai_intent_latency_us", "int64", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiIntentLatencyUs()
+			}
+			return int64(0)
+		},
+		isZeroInt64,
+	)
+	registerField("ai_intent_cache_hit", "bool", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiIntentCacheHit()
+			}
+			return false
+		},
+		isZeroBool,
+	)
+	registerField("ai_intent_questions_version", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetAiIntentQuestionsVersion()
+			}
+			return ""
+		},
+		isZeroString,
+	)
+	registerField("mirror_hit", "bool", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetMirrorHit()
+			}
+			return false
+		},
+		isZeroBool,
+	)
+	registerField("mirror_cluster", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {
+				return reqLog.GetMirrorCluster()
+			}
+			return ""
+		},
+		isZeroString,
 	)
 
 	// === Address info fields (flattened from ConnAddrInfo) ===

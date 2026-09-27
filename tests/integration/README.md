@@ -57,10 +57,11 @@ go test ./tests/integration/implementation/scenario-LR01-basic-flow/ -run TestLR
 | LR01 Require 字段模式 | 验证 `require` 模式仅输出 22 个必需字段 |
 | LR01 JSON 结构稳定性 | 验证同一条消息多次解析结果一致 |
 | LR02 CLI 工具 | 验证 bfe-pblog-tool 的 cat/tail 子命令在各种参数组合下的输出正确性，包括行号显示、指定条数、跟随模式、空文件与错误路径 |
-| LR03 基本写入 | 验证 mod_log_mysql 将请求日志按 89 列清单写入 MySQL：逐列断言标量/布尔 TINYINT/JSON 列/标签打平/log_time，覆盖字符串零值→NULL 规则 |
+| LR03 基本写入 | 验证 mod_log_mysql 将请求日志按 99 列清单写入 MySQL：逐列断言标量/布尔 TINYINT/JSON 列/标签打平/log_time，覆盖字符串零值→NULL 规则 |
 | LR03 幂等重放 | 验证同唯一键日志重发与 log-reader 重启 `-b` 补读时不产生重复行、冲突值被覆盖 |
 | LR03 零值规则 | 验证字符串零值与空结构→NULL、布尔/数值零值→0，以及未认证请求（ai_apikey_id 为 NULL）可正常写入 |
 | LR03 批次拆分 | 验证日志量超过 MaxSizePerBatch(10) 与 BatchSize(5) 时多批次处理不丢行、不串值 |
+| LR03 新字段写入与零值规则 | 验证 ai-cache/流量镜像/ai-intent 10 新列全字段写入精确取值（浮点列、bool→TINYINT 转换）与缺省形态（NOT NULL 字符串列→空串，mirror_hit→0，三个可空意图数值列→NULL=未求值；显式置 0→写 0 可区分） |
 
 ## Mock 说明
 
@@ -114,6 +115,7 @@ LR03 使用真实 MySQL（不用 SQLite 替代：`ON DUPLICATE KEY UPDATE` 与�
 - `测试设计文档/scenario-LR03-mysql-write/TC-02-幂等重放.md`
 - `测试设计文档/scenario-LR03-mysql-write/TC-03-零值规则.md`
 - `测试设计文档/scenario-LR03-mysql-write/TC-04-批次拆分.md`
+- `测试设计文档/scenario-LR03-mysql-write/TC-05-新字段写入与零值规则.md`
 - `../doc/configuration/config.md`
 - `../doc/configuration/mod_kafka/mod_kafka.conf.md`
 - `../doc/configuration/mod_kafka/kafka_config.data.md`

@@ -21,8 +21,9 @@ import (
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
 )
 
-// ddlColumns 是变更文档 §5 CREATE TABLE（ai-gateway-api 仓库 db_ddl_report_mysql.sql
-// 评审基准）的列清单硬编码，用于校验 field_mapper 列数/列序与 DDL 一致。
+// ddlColumns 是 ai-gateway-api 仓库 db_ddl_report_mysql.sql 明细表（99 列，变更
+// 文档 2026-09-27 评审基准）的列清单硬编码，用于校验 field_mapper 列数/列序与 DDL
+// 一致（快照式断言，防两侧漂移）。
 var ddlColumns = []string{
 	// 主键/基础列
 	"hostid", "log_time", "ai_apikey_id", "ai_requested_model", "logid", "product", "log_tag",
@@ -55,6 +56,10 @@ var ddlColumns = []string{
 	// AI 可观测列（JSON）
 	"ai_route_rule_hits", "ai_cluster_key_names", "ai_rate_limit_hits",
 	"ai_auth_reject_reason", "ai_auth_reject_quota_plans", "ai_auth_hit_quota_plans",
+	// AI 缓存/镜像/意图列（2026-09-27 加列，与 ai-gateway-api DDL 明细表列序一致）
+	"ai_cache_status", "mirror_hit", "mirror_cluster",
+	"ai_intent_question", "ai_intent_answer", "ai_intent_confidence", "ai_intent_source",
+	"ai_intent_latency_us", "ai_intent_cache_hit", "ai_intent_questions_version",
 }
 
 // makeBfeLog builds a BfeLog with full request fields for mapper tests.
@@ -133,6 +138,17 @@ func makeBfeLog() *bfe_access_pb.BfeLog {
 				},
 			},
 			AiAuthHitQuotaPlans: []string{"hit-plan-a"},
+			// AI cache / traffic mirroring / AI intent fields (v0.3.7/3.8/3.9).
+			AiCacheStatus:            strPtr("hit"),
+			MirrorHit:                boolPtr(true),
+			MirrorCluster:            strPtr("mirror-cluster-a"),
+			AiIntentQuestion:         strPtr("intent-q-001"),
+			AiIntentAnswer:           strPtr("intent-a-1"),
+			AiIntentConfidence:       float64Ptr(0.95),
+			AiIntentSource:           strPtr("llm"),
+			AiIntentLatencyUs:        int64Ptr(1234),
+			AiIntentCacheHit:         boolPtr(true),
+			AiIntentQuestionsVersion: strPtr("v2026-09-27"),
 		},
 	}
 }
@@ -143,6 +159,9 @@ func uint64Ptr(v uint64) *uint64 { return &v }
 func int64Ptr(v int64) *int64    { return &v }
 func int32Ptr(v int32) *int32    { return &v }
 func boolPtr(v bool) *bool       { return &v }
+func float64Ptr(v float64) *float64 {
+	return &v
+}
 
 func columnIndex(t *testing.T) map[string]int {
 	t.Helper()
@@ -164,8 +183,8 @@ func TestColumns_MatchDDL(t *testing.T) {
 			t.Fatalf("Columns()[%d] = %q, want %q (DDL order)", i, cols[i], want)
 		}
 	}
-	if len(cols) != 89 {
-		t.Fatalf("expected 89 columns, got %d", len(cols))
+	if len(cols) != 99 {
+		t.Fatalf("expected 99 columns, got %d", len(cols))
 	}
 }
 
@@ -175,8 +194,8 @@ func TestToRow_ColumnCountAndOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToRow failed: %v", err)
 	}
-	if len(row) != 89 {
-		t.Fatalf("row length = %d, want 89", len(row))
+	if len(row) != 99 {
+		t.Fatalf("row length = %d, want 99", len(row))
 	}
 }
 
@@ -362,8 +381,8 @@ func TestToRow_NilRequestLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToRow failed: %v", err)
 	}
-	if len(row) != 89 {
-		t.Fatalf("row length = %d, want 89", len(row))
+	if len(row) != 99 {
+		t.Fatalf("row length = %d, want 99", len(row))
 	}
 	idx := columnIndex(t)
 
@@ -372,6 +391,21 @@ func TestToRow_NilRequestLog(t *testing.T) {
 	}
 	if row[idx["req_body_len"]] != uint32(0) {
 		t.Errorf("req_body_len should be uint32(0) without RequestLog, got %v", row[idx["req_body_len"]])
+	}
+	// NOT NULL string columns stay "" (never NULL) without RequestLog.
+	if v := row[idx["ai_cache_status"]]; v != "" {
+		t.Errorf("ai_cache_status should be \"\" without RequestLog, got %v", v)
+	}
+	// bool TINYINT columns default to 0 without RequestLog.
+	if v := row[idx["mirror_hit"]]; v != int64(0) {
+		t.Errorf("mirror_hit should be int64(0) without RequestLog, got %v", v)
+	}
+	// optional numeric columns -> NULL without RequestLog.
+	if v := row[idx["ai_intent_confidence"]]; v != nil {
+		t.Errorf("ai_intent_confidence should be NULL without RequestLog, got %v", v)
+	}
+	if v := row[idx["ai_intent_cache_hit"]]; v != nil {
+		t.Errorf("ai_intent_cache_hit should be NULL without RequestLog, got %v", v)
 	}
 	if v := row[idx["log_time"]]; !v.(time.Time).Equal(time.Unix(100, 0)) {
 		t.Errorf("log_time = %v, want %v", v, time.Unix(100, 0))
@@ -389,5 +423,119 @@ func TestToRow_HostIdInjected(t *testing.T) {
 	v, ok := row[idx["hostid"]].(string)
 	if !ok || v == "" {
 		t.Errorf("hostid should be non-empty string, got %v", row[idx["hostid"]])
+	}
+}
+
+// TestToRow_CacheMirrorIntentFields asserts the 10 ai-cache / mirroring / intent
+// slots: NOT NULL string columns keep "", bool columns become TINYINT 0/1,
+// numeric columns keep their values.
+func TestToRow_CacheMirrorIntentFields(t *testing.T) {
+	mapper := NewFieldMapper()
+	row, err := mapper.ToRow(makeBfeLog())
+	if err != nil {
+		t.Fatalf("ToRow failed: %v", err)
+	}
+	idx := columnIndex(t)
+
+	if v := row[idx["ai_cache_status"]]; v != "hit" {
+		t.Errorf("ai_cache_status = %v, want hit", v)
+	}
+	if v := row[idx["mirror_hit"]]; v != int64(1) {
+		t.Errorf("mirror_hit = %v (%T), want int64(1)", v, v)
+	}
+	if v := row[idx["mirror_cluster"]]; v != "mirror-cluster-a" {
+		t.Errorf("mirror_cluster = %v, want mirror-cluster-a", v)
+	}
+	if v := row[idx["ai_intent_question"]]; v != "intent-q-001" {
+		t.Errorf("ai_intent_question = %v, want intent-q-001", v)
+	}
+	if v := row[idx["ai_intent_answer"]]; v != "intent-a-1" {
+		t.Errorf("ai_intent_answer = %v, want intent-a-1", v)
+	}
+	if v := row[idx["ai_intent_confidence"]]; v != float64(0.95) {
+		t.Errorf("ai_intent_confidence = %v (%T), want float64(0.95)", v, v)
+	}
+	if v := row[idx["ai_intent_source"]]; v != "llm" {
+		t.Errorf("ai_intent_source = %v, want llm", v)
+	}
+	if v := row[idx["ai_intent_latency_us"]]; v != int64(1234) {
+		t.Errorf("ai_intent_latency_us = %v (%T), want int64(1234)", v, v)
+	}
+	if v := row[idx["ai_intent_cache_hit"]]; v != int64(1) {
+		t.Errorf("ai_intent_cache_hit = %v (%T), want int64(1)", v, v)
+	}
+	if v := row[idx["ai_intent_questions_version"]]; v != "v2026-09-27" {
+		t.Errorf("ai_intent_questions_version = %v, want v2026-09-27", v)
+	}
+}
+
+// TestToRow_CacheMirrorIntentZeroForm asserts the default form when the new
+// fields are unset: NOT NULL string columns are "" (not NULL), mirror_hit is
+// 0 (NOT NULL TINYINT), and the three nullable optional columns
+// (confidence/latency_us/cache_hit) are NULL (proto pointer nil = 未设置).
+func TestToRow_CacheMirrorIntentZeroForm(t *testing.T) {
+	mapper := NewFieldMapper()
+	log := makeBfeLog()
+	log.RequestLog.AiCacheStatus = nil
+	log.RequestLog.MirrorHit = nil
+	log.RequestLog.MirrorCluster = nil
+	log.RequestLog.AiIntentQuestion = nil
+	log.RequestLog.AiIntentAnswer = nil
+	log.RequestLog.AiIntentConfidence = nil
+	log.RequestLog.AiIntentSource = nil
+	log.RequestLog.AiIntentLatencyUs = nil
+	log.RequestLog.AiIntentCacheHit = nil
+	log.RequestLog.AiIntentQuestionsVersion = nil
+
+	row, err := mapper.ToRow(log)
+	if err != nil {
+		t.Fatalf("ToRow failed: %v", err)
+	}
+	idx := columnIndex(t)
+
+	for _, col := range []string{
+		"ai_cache_status", "mirror_cluster", "ai_intent_question", "ai_intent_answer",
+		"ai_intent_source", "ai_intent_questions_version",
+	} {
+		if v := row[idx[col]]; v != "" {
+			t.Errorf("%s = %v (%T), want \"\" (NOT NULL column)", col, v, v)
+		}
+	}
+	// mirror_hit is a NOT NULL TINYINT column: unset -> 0.
+	if v := row[idx["mirror_hit"]]; v != int64(0) {
+		t.Errorf("mirror_hit = %v (%T), want int64(0)", v, v)
+	}
+	// Nullable optional columns: unset -> NULL.
+	for _, col := range []string{"ai_intent_confidence", "ai_intent_latency_us", "ai_intent_cache_hit"} {
+		if v := row[idx[col]]; v != nil {
+			t.Errorf("%s = %v (%T), want nil (NULL, optional unset)", col, v, v)
+		}
+	}
+}
+
+// TestToRow_OptionalNumSetZeroKept asserts explicitly-set zero values on the
+// optional columns are written as 0 (not NULL): pointer set -> value, so the
+// consumer can distinguish "evaluated to zero" from "not evaluated" (NULL).
+func TestToRow_OptionalNumSetZeroKept(t *testing.T) {
+	mapper := NewFieldMapper()
+	log := makeBfeLog()
+	log.RequestLog.AiIntentConfidence = float64Ptr(0)
+	log.RequestLog.AiIntentLatencyUs = int64Ptr(0)
+	log.RequestLog.AiIntentCacheHit = boolPtr(false)
+
+	row, err := mapper.ToRow(log)
+	if err != nil {
+		t.Fatalf("ToRow failed: %v", err)
+	}
+	idx := columnIndex(t)
+
+	if v := row[idx["ai_intent_confidence"]]; v != float64(0) {
+		t.Errorf("ai_intent_confidence = %v (%T), want float64(0) (set, not NULL)", v, v)
+	}
+	if v := row[idx["ai_intent_latency_us"]]; v != int64(0) {
+		t.Errorf("ai_intent_latency_us = %v (%T), want int64(0) (set, not NULL)", v, v)
+	}
+	if v := row[idx["ai_intent_cache_hit"]]; v != int64(0) {
+		t.Errorf("ai_intent_cache_hit = %v (%T), want int64(0) (set false, not NULL)", v, v)
 	}
 }
