@@ -91,6 +91,17 @@ func makeBfeLog() *bfe_access_pb.BfeLog {
 				},
 			},
 			AiAuthHitQuotaPlans: []string{"hit-plan-a"},
+			// AI cache / traffic mirroring / AI intent fields (v0.3.7/3.8/3.9).
+			AiCacheStatus:            strPtr("hit"),
+			MirrorHit:                boolPtr(true),
+			MirrorCluster:            strPtr("mirror-cluster-a"),
+			AiIntentQuestion:         strPtr("intent-q-001"),
+			AiIntentAnswer:           strPtr("intent-a-1"),
+			AiIntentConfidence:       float64Ptr(0.95),
+			AiIntentSource:           strPtr("llm"),
+			AiIntentLatencyUs:        int64Ptr(1234),
+			AiIntentCacheHit:         boolPtr(true),
+			AiIntentQuestionsVersion: strPtr("v2026-09-27"),
 		},
 	}
 }
@@ -101,11 +112,14 @@ func uint64Ptr(v uint64) *uint64 { return &v }
 func int64Ptr(v int64) *int64    { return &v }
 func int32Ptr(v int32) *int32    { return &v }
 func boolPtr(v bool) *bool       { return &v }
+func float64Ptr(v float64) *float64 {
+	return &v
+}
 
 func TestFieldRegistry_DefaultFieldsCount(t *testing.T) {
 	def := DefaultFields()
-	if len(def) != 64 {
-		t.Fatalf("expected 64 default fields, got %d: %v", len(def), def)
+	if len(def) != 74 {
+		t.Fatalf("expected 74 default fields, got %d: %v", len(def), def)
 	}
 }
 
@@ -118,8 +132,47 @@ func TestFieldRegistry_RequiredFieldsCount(t *testing.T) {
 
 func TestFieldRegistry_AllFieldsCount(t *testing.T) {
 	all := AllFields()
-	if len(all) < 67 {
-		t.Fatalf("expected at least 67 fields, got %d", len(all))
+	if len(all) != 92 {
+		t.Fatalf("expected 92 fields, got %d", len(all))
+	}
+}
+
+// TestFieldRegistry_CacheMirrorIntentFields asserts the ai-cache / traffic
+// mirroring / ai-intent fields (bfe-access-pb v0.3.7/3.8/3.9) are registered
+// with the expected type and Default membership.
+func TestFieldRegistry_CacheMirrorIntentFields(t *testing.T) {
+	want := map[string]string{
+		"ai_cache_status":           "string",
+		"ai_intent_question":        "string",
+		"ai_intent_answer":          "string",
+		"ai_intent_confidence":      "float64",
+		"ai_intent_source":          "string",
+		"ai_intent_latency_us":      "int64",
+		"ai_intent_cache_hit":       "bool",
+		"ai_intent_questions_version": "string",
+		"mirror_hit":                "bool",
+		"mirror_cluster":            "string",
+	}
+
+	defs := make(map[string]FieldDef)
+	for _, d := range AllFields() {
+		defs[d.Name] = d
+	}
+	for name, typ := range want {
+		d, ok := defs[name]
+		if !ok {
+			t.Errorf("field %s should be registered", name)
+			continue
+		}
+		if d.Type != typ {
+			t.Errorf("field %s type = %s, want %s", name, d.Type, typ)
+		}
+		if d.Required {
+			t.Errorf("field %s should not be required", name)
+		}
+		if !d.Default {
+			t.Errorf("field %s should be in default set", name)
+		}
 	}
 }
 
@@ -254,6 +307,47 @@ func TestFieldRegistry_ExtractAIAuthHitQuotaPlans(t *testing.T) {
 	}
 	if len(plans) != 1 || plans[0] != "hit-plan-a" {
 		t.Errorf("unexpected plans: %v", plans)
+	}
+}
+
+func TestFieldRegistry_ExtractCacheMirrorIntentFields(t *testing.T) {
+	log := makeBfeLog()
+
+	tests := []struct {
+		name     string
+		expected interface{}
+	}{
+		{"ai_cache_status", "hit"},
+		{"mirror_hit", true},
+		{"mirror_cluster", "mirror-cluster-a"},
+		{"ai_intent_question", "intent-q-001"},
+		{"ai_intent_answer", "intent-a-1"},
+		{"ai_intent_confidence", float64(0.95)},
+		{"ai_intent_source", "llm"},
+		{"ai_intent_latency_us", int64(1234)},
+		{"ai_intent_cache_hit", true},
+		{"ai_intent_questions_version", "v2026-09-27"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val, isZero := Extract(tt.name, log)
+			if isZero {
+				t.Errorf("%s should not be zero", tt.name)
+			}
+			if val != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, val)
+			}
+		})
+	}
+
+	// Unset fields extract as zero values.
+	log.RequestLog.AiIntentConfidence = nil
+	log.RequestLog.MirrorHit = nil
+	if _, isZero := Extract("ai_intent_confidence", log); !isZero {
+		t.Error("ai_intent_confidence should be zero when unset")
+	}
+	if _, isZero := Extract("mirror_hit", log); !isZero {
+		t.Error("mirror_hit should be zero when unset")
 	}
 }
 

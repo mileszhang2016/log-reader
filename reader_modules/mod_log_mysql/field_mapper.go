@@ -27,15 +27,16 @@ import (
 type columnKind int
 
 const (
-	kindScalar   columnKind = iota // mod_fields 抽取直通；字符串零值 -> NULL
-	kindBoolTiny                   // 布尔抽取值 -> TINYINT（false->0, true->1）
-	kindJSON                       // 结构化抽取值 json.Marshal 后写入；空 -> NULL
-	kindLogTime                    // timestamp（Unix 秒）-> time.Time（本地时区）
-	kindTagName                    // ai_apikeytags 打平：标签名
-	kindTagValue                   // ai_apikeytags 打平：标签值
+	kindScalar     columnKind = iota // mod_fields 抽取直通；字符串零值 -> NULL
+	kindNotNullStr                   // NOT NULL 字符串列直通；空串原样写入 ""（不映射 NULL）
+	kindBoolTiny                     // 布尔抽取值 -> TINYINT（false->0, true->1）
+	kindJSON                         // 结构化抽取值 json.Marshal 后写入；空 -> NULL
+	kindLogTime                      // timestamp（Unix 秒）-> time.Time（本地时区）
+	kindTagName                      // ai_apikeytags 打平：标签名
+	kindTagValue                     // ai_apikeytags 打平：标签值
 )
 
-// columnDef 单列定义。本表是写入侧 89 列清单与列序的唯一权威，
+// columnDef 单列定义。本表是写入侧 99 列清单与列序的唯一权威，
 // 列序与 ai-gateway-api 仓库 db_ddl_report_mysql.sql 的 CREATE TABLE 列序一致。
 type columnDef struct {
 	name  string // 表列名
@@ -153,6 +154,20 @@ var columnDefs = []columnDef{
 	{name: "ai_auth_reject_reason", field: "ai_auth_reject_reason", kind: kindScalar},
 	{name: "ai_auth_reject_quota_plans", field: "ai_auth_reject_quota_plans", kind: kindJSON},
 	{name: "ai_auth_hit_quota_plans", field: "ai_auth_hit_quota_plans", kind: kindJSON},
+
+	// === AI 缓存/镜像/意图列（2026-09-27 加列，proto v0.3.7/3.8/3.9） ===
+	// 列序与 ai-gateway-api db_ddl_report_mysql.sql 明细表新列顺序逐字一致；
+	// ai_cache_key、mirror_status~mirror_error 不进报表库（设计文档 2026-09-27）。
+	{name: "ai_cache_status", field: "ai_cache_status", kind: kindNotNullStr},
+	{name: "mirror_hit", field: "mirror_hit", kind: kindBoolTiny},
+	{name: "mirror_cluster", field: "mirror_cluster", kind: kindNotNullStr},
+	{name: "ai_intent_question", field: "ai_intent_question", kind: kindNotNullStr},
+	{name: "ai_intent_answer", field: "ai_intent_answer", kind: kindNotNullStr},
+	{name: "ai_intent_confidence", field: "ai_intent_confidence", kind: kindScalar},
+	{name: "ai_intent_source", field: "ai_intent_source", kind: kindNotNullStr},
+	{name: "ai_intent_latency_us", field: "ai_intent_latency_us", kind: kindScalar},
+	{name: "ai_intent_cache_hit", field: "ai_intent_cache_hit", kind: kindBoolTiny},
+	{name: "ai_intent_questions_version", field: "ai_intent_questions_version", kind: kindNotNullStr},
 }
 
 // FieldMapper 将 BfeLog 组装为固定列序的数据行
@@ -209,9 +224,10 @@ func flattenTag(tags map[string]interface{}, level int) (name interface{}, value
 	return name, value
 }
 
-// ToRow 将 BfeLog 组装为一行数据（固定 89 列列序）。
-// 字符串零值 -> NULL；数值/布尔原样（布尔 TINYINT 列转 0/1）；
-// JSON 列 marshal 后写入、空 -> NULL；标签缺失 -> NULL。
+// ToRow 将 BfeLog 组装为一行数据（固定 99 列列序）。
+// 字符串零值 -> NULL（kindNotNullStr 列除外：空串原样写入，匹配 NOT NULL 列）；
+// 数值/布尔原样（布尔 TINYINT 列转 0/1）；JSON 列 marshal 后写入、空 -> NULL；
+// 标签缺失 -> NULL。
 func (m *FieldMapper) ToRow(log *bfe_access_pb.BfeLog) ([]interface{}, error) {
 	row := make([]interface{}, 0, len(columnDefs))
 
@@ -240,6 +256,11 @@ func (m *FieldMapper) ToRow(log *bfe_access_pb.BfeLog) ([]interface{}, error) {
 		case kindBoolTiny:
 			v, _ := mod_fields.Extract(col.field, log)
 			row = append(row, boolToTinyInt(v))
+
+		case kindNotNullStr:
+			v, _ := mod_fields.Extract(col.field, log)
+			s, _ := v.(string)
+			row = append(row, s)
 
 		case kindJSON:
 			v, isZero := mod_fields.Extract(col.field, log)

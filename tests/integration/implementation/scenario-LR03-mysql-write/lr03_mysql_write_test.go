@@ -130,34 +130,44 @@ func (e *testEnv) dumpLogs() {
 
 // requestLogRow is a typed view of the columns asserted in LR03.
 type requestLogRow struct {
-	logid                int64
-	product              string
-	logTag               sql.NullString
-	errCode              sql.NullString
-	errMsg               sql.NullString
-	protoCol             sql.NullString
-	headerHost           sql.NullString
-	originURI            sql.NullString
-	aiRequestedModel     sql.NullString
-	aiTargetModel        sql.NullString
-	clientIP             sql.NullString
-	isTrustSrcIP         sql.NullInt64
-	reqNum               sql.NullInt64
-	aiStream             sql.NullInt64
-	aiInputTokens        sql.NullInt64
-	aiOutputTokens       sql.NullInt64
-	allTime              sql.NullInt64
-	backendRetry         sql.NullInt64
-	resStatusCode        sql.NullInt64
-	reqHeaders           sql.NullString
-	aiRateLimitHits      sql.NullString
-	aiAuthRejectPlans    sql.NullString
-	aiAuthHitPlans       sql.NullString
-	level1Name           sql.NullString
-	level1               sql.NullString
-	level3Name           sql.NullString
-	level3               sql.NullString
-	logTime              time.Time
+	logid                    int64
+	product                  string
+	logTag                   sql.NullString
+	errCode                  sql.NullString
+	errMsg                   sql.NullString
+	protoCol                 sql.NullString
+	headerHost               sql.NullString
+	originURI                sql.NullString
+	aiRequestedModel         sql.NullString
+	aiTargetModel            sql.NullString
+	clientIP                 sql.NullString
+	isTrustSrcIP             sql.NullInt64
+	reqNum                   sql.NullInt64
+	aiStream                 sql.NullInt64
+	aiInputTokens            sql.NullInt64
+	aiOutputTokens           sql.NullInt64
+	allTime                  sql.NullInt64
+	backendRetry             sql.NullInt64
+	resStatusCode            sql.NullInt64
+	reqHeaders               sql.NullString
+	aiRateLimitHits          sql.NullString
+	aiAuthRejectPlans        sql.NullString
+	aiAuthHitPlans           sql.NullString
+	level1Name               sql.NullString
+	level1                   sql.NullString
+	level3Name               sql.NullString
+	level3                   sql.NullString
+	aiCacheStatus            string
+	mirrorHit                int64
+	mirrorCluster            string
+	aiIntentQuestion         string
+	aiIntentAnswer           string
+	aiIntentConfidence       sql.NullFloat64
+	aiIntentSource           string
+	aiIntentLatencyUs        sql.NullInt64
+	aiIntentCacheHit         sql.NullInt64
+	aiIntentQuestionsVersion string
+	logTime                  time.Time
 }
 
 func (e *testEnv) queryRowByLogid(logid uint64) *requestLogRow {
@@ -170,14 +180,22 @@ func (e *testEnv) queryRowByLogid(logid uint64) *requestLogRow {
 			ai_stream, ai_input_tokens, ai_output_tokens, all_time, backend_retry,
 			res_status_code, req_headers, ai_rate_limit_hits,
 			ai_auth_reject_quota_plans, ai_auth_hit_quota_plans,
-			level1Name, level1, level3Name, level3, log_time
+			level1Name, level1, level3Name, level3,
+			ai_cache_status, mirror_hit, mirror_cluster,
+			ai_intent_question, ai_intent_answer, ai_intent_confidence, ai_intent_source,
+			ai_intent_latency_us, ai_intent_cache_hit, ai_intent_questions_version,
+			log_time
 		FROM `+tableName+` WHERE logid = ?`, logid).Scan(
 		&r.logid, &r.product, &r.logTag, &r.errCode, &r.errMsg, &r.protoCol, &r.headerHost, &r.originURI,
 		&r.aiRequestedModel, &r.aiTargetModel, &r.clientIP, &r.isTrustSrcIP, &r.reqNum,
 		&r.aiStream, &r.aiInputTokens, &r.aiOutputTokens, &r.allTime, &r.backendRetry,
 		&r.resStatusCode, &r.reqHeaders, &r.aiRateLimitHits,
 		&r.aiAuthRejectPlans, &r.aiAuthHitPlans,
-		&r.level1Name, &r.level1, &r.level3Name, &r.level3, &r.logTime)
+		&r.level1Name, &r.level1, &r.level3Name, &r.level3,
+		&r.aiCacheStatus, &r.mirrorHit, &r.mirrorCluster,
+		&r.aiIntentQuestion, &r.aiIntentAnswer, &r.aiIntentConfidence, &r.aiIntentSource,
+		&r.aiIntentLatencyUs, &r.aiIntentCacheHit, &r.aiIntentQuestionsVersion,
+		&r.logTime)
 	if err != nil {
 		e.dumpLogs()
 		e.t.Fatalf("query row by logid %d failed: %v", logid, err)
@@ -271,6 +289,19 @@ func assertNullInt(t *testing.T, col sql.NullInt64, name string, want int64) {
 	}
 }
 
+// assertNullFloat asserts a nullable float column equals want.
+func assertNullFloat(t *testing.T, col sql.NullFloat64, name string, want float64) {
+	t.Helper()
+
+	if !col.Valid {
+		t.Errorf("column %s should not be NULL (want %v)", name, want)
+		return
+	}
+	if col.Float64 != want {
+		t.Errorf("column %s = %v, want %v", name, col.Float64, want)
+	}
+}
+
 func TestLR03_BasicWrite(t *testing.T) {
 	e := newTestEnv(t)
 	defer e.Close()
@@ -344,6 +375,32 @@ func TestLR03_BasicWrite(t *testing.T) {
 		assertNullString(t, r.level1, "level1", "ops")
 		assertNull(t, r.level3Name.Valid, "level3Name")
 		assertNull(t, r.level3.Valid, "level3")
+
+		// AI cache / mirroring / intent columns (filled by MakeRequestLog).
+		if r.aiCacheStatus != "hit" {
+			t.Errorf("ai_cache_status = %q, want hit", r.aiCacheStatus)
+		}
+		if r.mirrorHit != 1 {
+			t.Errorf("mirror_hit = %d, want 1", r.mirrorHit)
+		}
+		if r.mirrorCluster != "mirror-cluster-A" {
+			t.Errorf("mirror_cluster = %q, want mirror-cluster-A", r.mirrorCluster)
+		}
+		if r.aiIntentQuestion != "intent-q-001" {
+			t.Errorf("ai_intent_question = %q, want intent-q-001", r.aiIntentQuestion)
+		}
+		if r.aiIntentAnswer != "intent-a-1" {
+			t.Errorf("ai_intent_answer = %q, want intent-a-1", r.aiIntentAnswer)
+		}
+		assertNullFloat(t, r.aiIntentConfidence, "ai_intent_confidence", 0.95)
+		if r.aiIntentSource != "llm" {
+			t.Errorf("ai_intent_source = %q, want llm", r.aiIntentSource)
+		}
+		assertNullInt(t, r.aiIntentLatencyUs, "ai_intent_latency_us", 1234)
+		assertNullInt(t, r.aiIntentCacheHit, "ai_intent_cache_hit", 1)
+		if r.aiIntentQuestionsVersion != "v2026-09-27" {
+			t.Errorf("ai_intent_questions_version = %q, want v2026-09-27", r.aiIntentQuestionsVersion)
+		}
 
 		// log_time is the fixed timestamp (compared in UTC).
 		if got, want := r.logTime.UTC().Unix(), int64(testTS); got != want {
@@ -486,4 +543,101 @@ func TestLR03_BatchSplit(t *testing.T) {
 			t.Errorf("logid %d model = %q, want %q", logid, seen[logid], wantModel)
 		}
 	}
+}
+
+// TestLR03_NewFieldsWriteAndZeroRules (TC-05) verifies the 10 ai-cache /
+// mirroring / intent columns end to end: exact values when the fields are
+// filled, and the mapper-defined default form ("" / 0, never NULL) when unset.
+func TestLR03_NewFieldsWriteAndZeroRules(t *testing.T) {
+	e := newTestEnv(t)
+	defer e.Close()
+
+	// Part 1: all 10 new fields filled (MakeRequestLog sets them).
+	full := common.MakeRequestLog(82001, bfe_access_pb.ProductID_BFE,
+		"intent.example.org", "/v1/chat", "intent-model")
+	e.logGen.MustWriteBfeLog(t, full)
+	e.waitRows(1, 20*time.Second)
+
+	r := e.queryRowByLogid(82001)
+	if r.aiCacheStatus != "hit" {
+		t.Errorf("ai_cache_status = %q, want hit", r.aiCacheStatus)
+	}
+	if r.mirrorHit != 1 {
+		t.Errorf("mirror_hit = %d, want 1", r.mirrorHit)
+	}
+	if r.mirrorCluster != "mirror-cluster-A" {
+		t.Errorf("mirror_cluster = %q, want mirror-cluster-A", r.mirrorCluster)
+	}
+	if r.aiIntentQuestion != "intent-q-001" {
+		t.Errorf("ai_intent_question = %q, want intent-q-001", r.aiIntentQuestion)
+	}
+	if r.aiIntentAnswer != "intent-a-1" {
+		t.Errorf("ai_intent_answer = %q, want intent-a-1", r.aiIntentAnswer)
+	}
+	assertNullFloat(t, r.aiIntentConfidence, "ai_intent_confidence", 0.95)
+	if r.aiIntentSource != "llm" {
+		t.Errorf("ai_intent_source = %q, want llm", r.aiIntentSource)
+	}
+	assertNullInt(t, r.aiIntentLatencyUs, "ai_intent_latency_us", 1234)
+	assertNullInt(t, r.aiIntentCacheHit, "ai_intent_cache_hit", 1)
+	if r.aiIntentQuestionsVersion != "v2026-09-27" {
+		t.Errorf("ai_intent_questions_version = %q, want v2026-09-27", r.aiIntentQuestionsVersion)
+	}
+
+	// Part 2: minimal log without cache/mirror/intent fields -> mapper defaults.
+	zeroType := bfe_access_pb.BfeLogType_Request
+	zeroProduct := bfe_access_pb.ProductID_BFE
+	zeroIP := uint32(0)
+	notTrust := false
+	zero := &bfe_access_pb.BfeLog{
+		Logid:     proto.Uint64(82002),
+		Timestamp: proto.Uint64(testTS),
+		Product:   &zeroProduct,
+		LogType:   &zeroType,
+		RequestLog: &bfe_access_pb.RequestLog{
+			ErrCode:    proto.String(""),
+			ErrMsg:     proto.String(""),
+			AddrInfo:   &bfe_access_pb.ConnAddrInfo{BfeIp: &zeroIP, SockSrcIp: &zeroIP, IsTrustSrcIp: &notTrust},
+			ClientIp:   proto.Uint32(0),
+			ReqNum:     proto.Uint32(0),
+			Proto:      proto.String("HTTP/1.1"),
+			HeaderHost: proto.String("zero.example.org"),
+			OriginUri:  proto.String("/v1/chat"),
+			Method:     proto.String("POST"),
+			AllTime:    proto.Uint32(0),
+			AiRequestedModel: proto.String("zero-intent-model"),
+		},
+	}
+	e.logGen.MustWriteBfeLog(t, zero)
+	e.waitRows(2, 20*time.Second)
+
+	zr := e.queryRowByLogid(82002)
+
+	// NOT NULL string columns: empty string, never NULL.
+	if zr.aiCacheStatus != "" {
+		t.Errorf("ai_cache_status = %q, want \"\"", zr.aiCacheStatus)
+	}
+	if zr.mirrorCluster != "" {
+		t.Errorf("mirror_cluster = %q, want \"\"", zr.mirrorCluster)
+	}
+	if zr.aiIntentQuestion != "" {
+		t.Errorf("ai_intent_question = %q, want \"\"", zr.aiIntentQuestion)
+	}
+	if zr.aiIntentAnswer != "" {
+		t.Errorf("ai_intent_answer = %q, want \"\"", zr.aiIntentAnswer)
+	}
+	if zr.aiIntentSource != "" {
+		t.Errorf("ai_intent_source = %q, want \"\"", zr.aiIntentSource)
+	}
+	if zr.aiIntentQuestionsVersion != "" {
+		t.Errorf("ai_intent_questions_version = %q, want \"\"", zr.aiIntentQuestionsVersion)
+	}
+
+	// bool TINYINT and numeric columns: 0, never NULL (mapper zero-value rule).
+	if zr.mirrorHit != 0 {
+		t.Errorf("mirror_hit = %d, want 0", zr.mirrorHit)
+	}
+	assertNullInt(t, zr.aiIntentLatencyUs, "ai_intent_latency_us", 0)
+	assertNullInt(t, zr.aiIntentCacheHit, "ai_intent_cache_hit", 0)
+	assertNullFloat(t, zr.aiIntentConfidence, "ai_intent_confidence", 0)
 }
