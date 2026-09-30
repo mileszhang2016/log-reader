@@ -340,8 +340,9 @@ tests/integration/测试设计文档/scenario-LR04-mysql-startup-connect-retry/
 正常建连写入后 `Pause()`：进程存活、`SEND_MYSQL_FAILED` 增长；`Unpause()` 后
 `database/sql` 连接池自行更换底层连接恢复写入（现状能力，非本改动引入）。不纳入
 LR04 自动化，原因：Pause 下连接池拨号无超时（DSN 未配 `timeout`），写路径挂起时长
-不可控，断言窗口不稳定；一期改用手工验证（见"验证步骤"第 2.4 步），如需自动化待
-二期配合写路径超时再立项。
+不可控，断言窗口不稳定；一期改用手工验证（见"验证步骤"第 2.4 步），自动化方案见
+`../2026-09-30-mod-log-mysql-runtime-reconnect/design-changes.md`（写路径超时 +
+重试耗尽触发重连，落地后回补本用例）。
 
 #### 6.3 README 与文档更新
 

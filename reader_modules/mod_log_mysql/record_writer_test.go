@@ -36,6 +36,7 @@ func newTestConf() *ConfModLogMysql {
 			Table:                  "test_table",
 			ConnectTimeoutMs:       3000,
 			ConnectRetryIntervalMs: 50, // fast retry in tests
+			HealthPingIntervalMs:   0,  // health ping disabled by default
 		},
 		Writer: ConfLogMysqlWriter{
 			QueueSize:       16,
@@ -44,6 +45,7 @@ func newTestConf() *ConfModLogMysql {
 			MaxRetries:      1,
 			MaxOpenConns:    2,
 			MaxIdleConns:    1,
+			BatchTimeoutMs:  5000, // generous: no interference unless overridden
 		},
 	}
 }
@@ -320,7 +322,8 @@ func TestRecordWriter_ConnectIdempotent(t *testing.T) {
 // retry loop connects, the backlog drains in batches as before.
 func TestRecordWriter_BufferThenConnectDrain(t *testing.T) {
 	conf := newTestConf()
-	conf.Writer.FlushIntervalMs = 50 // ticker-based flush after connect
+	conf.Writer.BatchSize = 2           // flush by count once both rows arrived
+	conf.Writer.FlushIntervalMs = 60000 // disable ticker flush: keep the batch atomic
 
 	var failing atomic.Bool
 	db, mock, err := sqlmock.New()
@@ -340,7 +343,7 @@ func TestRecordWriter_BufferThenConnectDrain(t *testing.T) {
 	if err := w.Connect(); err == nil {
 		t.Fatal("initial Connect should fail while failing is set")
 	}
-	w.Start() // writeLoop parks on connCh; connectLoop retries every 50ms
+	w.Start() // writeLoop parks; connSupervisor retries every 50ms
 
 	// rows enqueue into the buffered queue while disconnected
 	for i := 0; i < 2; i++ {
@@ -409,4 +412,268 @@ func TestRecordWriter_CloseBeforeConnected(t *testing.T) {
 	if got := state.GetCounter("MYSQL_CONN_OK"); got != 0 {
 		t.Errorf("MYSQL_CONN_OK = %d, want 0", got)
 	}
+}
+
+// TestRecordWriter_WriteExhaustedThenReconnect: when write retries are
+// exhausted the writer marks the connection down, the supervisor reconnects,
+// the held batch is rewritten first, and rows enqueued while down are drained
+// afterwards. Nothing is counted as SEND_MYSQL_FAILED.
+func TestRecordWriter_WriteExhaustedThenReconnect(t *testing.T) {
+	conf := newTestConf()
+	conf.Writer.BatchSize = 1 // flush on every enqueue
+	conf.Writer.MaxRetries = 1
+
+	db1, mock1, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+	db2, mock2, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+
+	var useSecond atomic.Bool
+	state := newTestState()
+	w := NewRecordWriter(conf, state)
+	w.connect = func(*ConfModLogMysql) (*sql.DB, error) {
+		if useSecond.Load() {
+			return db2, nil
+		}
+		return db1, nil
+	}
+	if err := w.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	// db1: both write attempts fail
+	mock1.ExpectBegin()
+	mock1.ExpectExec("INSERT INTO test_table").WillReturnError(errors.New("connection lost"))
+	mock1.ExpectRollback()
+	mock1.ExpectBegin()
+	mock1.ExpectExec("INSERT INTO test_table").WillReturnError(errors.New("connection lost"))
+	mock1.ExpectRollback()
+
+	// db2: pending-batch rewrite + three rows buffered while down
+	for i := 0; i < 4; i++ {
+		mock2.ExpectBegin()
+		mock2.ExpectExec(regexp.QuoteMeta(expectedInsertSQL("test_table", ddlColumns, 1))).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock2.ExpectCommit()
+	}
+
+	useSecond.Store(true)
+	w.Start()
+
+	for i := 0; i < 4; i++ {
+		if !w.Enqueue(makeRow()) {
+			t.Fatalf("Enqueue %d failed", i)
+		}
+	}
+
+	waitForCounter(t, state, "WRITE_BATCH_SIZE", 4, 5*time.Second)
+	w.Close()
+
+	if got := state.GetCounter("MYSQL_CONN_LOST"); got != 1 {
+		t.Errorf("MYSQL_CONN_LOST = %d, want 1", got)
+	}
+	if got := state.GetCounter("MYSQL_CONN_OK"); got != 1 {
+		t.Errorf("MYSQL_CONN_OK = %d, want 1 (supervisor reconnect)", got)
+	}
+	if got := state.GetCounter("SEND_MYSQL_FAILED"); got != 0 {
+		t.Errorf("SEND_MYSQL_FAILED = %d, want 0 (held batch rewritten after reconnect)", got)
+	}
+	if got := state.GetState("MYSQL_CONN_STATE"); got != "UP" {
+		t.Errorf("MYSQL_CONN_STATE = %q, want UP", got)
+	}
+	if err := mock1.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock1 unfulfilled expectations: %v", err)
+	}
+	if err := mock2.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock2 unfulfilled expectations: %v", err)
+	}
+}
+
+// TestRecordWriter_RewriteAfterReconnectStillFails: if the rewrite after a
+// reconnect still fails (e.g. table dropped), the held batch is dropped and
+// counted as SEND_MYSQL_FAILED, and the write loop keeps consuming.
+func TestRecordWriter_RewriteAfterReconnectStillFails(t *testing.T) {
+	conf := newTestConf()
+	conf.Writer.BatchSize = 1
+	conf.Writer.MaxRetries = 0 // single failing attempt on db1
+
+	db1, mock1, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+	db2, mock2, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+
+	var useSecond atomic.Bool
+	state := newTestState()
+	w := NewRecordWriter(conf, state)
+	w.connect = func(*ConfModLogMysql) (*sql.DB, error) {
+		if useSecond.Load() {
+			return db2, nil
+		}
+		return db1, nil
+	}
+	if err := w.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	mock1.ExpectBegin()
+	mock1.ExpectExec("INSERT INTO test_table").WillReturnError(errors.New("table dropped"))
+	mock1.ExpectRollback()
+
+	// reconnect succeeds at connection level, but the rewrite still fails
+	mock2.ExpectBegin()
+	mock2.ExpectExec("INSERT INTO test_table").WillReturnError(errors.New("table dropped"))
+	mock2.ExpectRollback()
+
+	useSecond.Store(true)
+	w.Start()
+
+	if !w.Enqueue(makeRow()) {
+		t.Fatal("Enqueue failed")
+	}
+
+	waitForCounter(t, state, "SEND_MYSQL_FAILED", 1, 5*time.Second)
+	w.Close()
+
+	if got := state.GetCounter("MYSQL_CONN_LOST"); got != 1 {
+		t.Errorf("MYSQL_CONN_LOST = %d, want 1", got)
+	}
+	if got := state.GetCounter("MYSQL_CONN_OK"); got != 1 {
+		t.Errorf("MYSQL_CONN_OK = %d, want 1", got)
+	}
+	if got := state.GetCounter("WRITE_BATCH_SIZE"); got != 0 {
+		t.Errorf("WRITE_BATCH_SIZE = %d, want 0", got)
+	}
+	if err := mock1.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock1 unfulfilled expectations: %v", err)
+	}
+	if err := mock2.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock2 unfulfilled expectations: %v", err)
+	}
+}
+
+// TestRecordWriter_MarkDownIdempotent: repeated markDown calls count a single
+// connection loss and keep the writer down.
+func TestRecordWriter_MarkDownIdempotent(t *testing.T) {
+	w, _, state := newTestWriter(t)
+
+	w.markDown("test reason 1")
+	w.markDown("test reason 2")
+
+	if w.Connected() {
+		t.Error("Connected() should be false after markDown")
+	}
+	if got := state.GetCounter("MYSQL_CONN_LOST"); got != 1 {
+		t.Errorf("MYSQL_CONN_LOST = %d, want 1 (idempotent)", got)
+	}
+	if got := state.GetState("MYSQL_CONN_STATE"); got != "DOWN" {
+		t.Errorf("MYSQL_CONN_STATE = %q, want DOWN", got)
+	}
+	w.Close()
+}
+
+// TestRecordWriter_BatchTimeoutTriggersReconnect: a batch execution hanging
+// beyond BatchTimeoutMs is cancelled by context deadline, which drives the
+// writer into markDown and reconnect; the held batch is rewritten on the new
+// connection.
+func TestRecordWriter_BatchTimeoutTriggersReconnect(t *testing.T) {
+	conf := newTestConf()
+	conf.Writer.BatchSize = 1
+	conf.Writer.MaxRetries = 0 // single attempt
+	conf.Writer.BatchTimeoutMs = 50
+
+	db1, mock1, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+	db2, mock2, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+
+	var useSecond atomic.Bool
+	state := newTestState()
+	w := NewRecordWriter(conf, state)
+	w.connect = func(*ConfModLogMysql) (*sql.DB, error) {
+		if useSecond.Load() {
+			return db2, nil
+		}
+		return db1, nil
+	}
+	if err := w.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	// execution hangs far beyond BatchTimeoutMs
+	mock1.ExpectBegin()
+	mock1.ExpectExec("INSERT INTO test_table").
+		WillDelayFor(500 * time.Millisecond).
+		WillReturnError(errors.New("db down"))
+	mock1.ExpectRollback()
+
+	mock2.ExpectBegin()
+	mock2.ExpectExec(regexp.QuoteMeta(expectedInsertSQL("test_table", ddlColumns, 1))).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock2.ExpectCommit()
+
+	useSecond.Store(true)
+	w.Start()
+
+	if !w.Enqueue(makeRow()) {
+		t.Fatal("Enqueue failed")
+	}
+
+	waitForCounter(t, state, "WRITE_BATCH_SIZE", 1, 10*time.Second)
+	w.Close()
+
+	if got := state.GetCounter("MYSQL_CONN_LOST"); got != 1 {
+		t.Errorf("MYSQL_CONN_LOST = %d, want 1", got)
+	}
+	if got := state.GetCounter("SEND_MYSQL_FAILED"); got != 0 {
+		t.Errorf("SEND_MYSQL_FAILED = %d, want 0", got)
+	}
+	if err := mock1.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock1 unfulfilled expectations: %v", err)
+	}
+	if err := mock2.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock2 unfulfilled expectations: %v", err)
+	}
+}
+
+// TestRecordWriter_PingFailureTriggersMarkDown: with HealthPingIntervalMs > 0,
+// a failed health ping marks the connection down and counts MYSQL_CONN_LOST.
+func TestRecordWriter_PingFailureTriggersMarkDown(t *testing.T) {
+	conf := newTestConf()
+	conf.Mysql.HealthPingIntervalMs = 20
+
+	db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+	mock.ExpectPing() // first ping succeeds; the next one errors (no expectation left)
+
+	state := newTestState()
+	w := NewRecordWriter(conf, state)
+	w.connect = func(*ConfModLogMysql) (*sql.DB, error) { return db, nil }
+	if err := w.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	w.Start()
+	defer w.Close()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if state.GetCounter("MYSQL_CONN_LOST") >= 1 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("MYSQL_CONN_LOST still 0 after 5s (health ping should have failed)")
 }

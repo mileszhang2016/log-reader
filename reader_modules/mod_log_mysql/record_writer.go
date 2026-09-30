@@ -34,10 +34,13 @@ var retryBackoffMs = []int64{200, 400, 800}
 // 作为 RecordWriter 的注入缝：单测替换为"前 N 次失败、第 N+1 次成功"的桩
 type connector func(conf *ConfModLogMysql) (*sql.DB, error)
 
-// defaultConnector 用真实 MySQL 驱动建连；失败时不残留句柄，可反复调用
+// defaultConnector 用真实 MySQL 驱动建连；失败时不残留句柄，可反复调用。
+// DSN 中 timeout（拨号）与 writeTimeout（写操作，含 Commit/Rollback）防止
+// 网络分区时写路径挂到 OS 级 TCP 超时
 func defaultConnector(conf *ConfModLogMysql) (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4",
-		conf.Mysql.User, conf.Mysql.Password, conf.Mysql.Addr, conf.Mysql.DBName)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&timeout=%dms&writeTimeout=%dms",
+		conf.Mysql.User, conf.Mysql.Password, conf.Mysql.Addr, conf.Mysql.DBName,
+		conf.Mysql.ConnectTimeoutMs, conf.Writer.BatchTimeoutMs)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -60,18 +63,21 @@ func defaultConnector(conf *ConfModLogMysql) (*sql.DB, error) {
 }
 
 // RecordWriter 批量写入器：缓冲队列 + 单写协程攒批 + 事务批插 + 退避重试。
-// 建连由 Connect/connectLoop 负责：启动时 MySQL 不可达不致命，后台持续重试，
-// 建连成功前 writeLoop 挂起不消费，行数据在缓冲队列中堆积（背压见 Enqueue）。
+// 建连由 connSupervisor 负责（启动未连通、运行期断连均后台重试，Connect 幂等
+// 可反复调用）；writeLoop 在建连信号到达前挂起不消费，行数据在缓冲队列中
+// 堆积（背压见 Enqueue）。连接状态机：UP --(写重试耗尽/ping 失败)--> DOWN
+// --(supervisor 重连成功)--> UP
 type RecordWriter struct {
-	db       atomic.Pointer[sql.DB] // nil = 未连通；connectLoop 写、writeLoop/Close 读
-	connect  connector
-	conf     *ConfModLogMysql
-	ch       chan []interface{} // 容量 QueueSize
-	state    *module_state2.State
-	stopCh   chan struct{}
-	connCh   chan struct{} // 建连成功信号，close 一次（connOnce 保护）
-	connOnce sync.Once
-	wg       sync.WaitGroup
+	db      atomic.Pointer[sql.DB] // nil = DOWN；markDown 写、Connect/supervisor 写、writeLoop/Close 读
+	connect connector
+	conf    *ConfModLogMysql
+	ch      chan []interface{} // 容量 QueueSize
+	state   *module_state2.State
+	stopCh  chan struct{}
+	discCh  chan struct{} // markDown 唤醒 supervisor 的信号（容量 1，非阻塞发送）
+	connMu  sync.RWMutex  // 保护 connCh 换代
+	connCh  chan struct{} // 当前代建连信号：Connect 成功时 close 旧 channel 并换新，等待者按代唤醒
+	wg      sync.WaitGroup
 
 	stmtHead string // INSERT INTO <table> (cols...) VALUES
 	stmtRow  string // (?,...,?)，按列数预生成
@@ -79,7 +85,7 @@ type RecordWriter struct {
 }
 
 // NewRecordWriter 创建 RecordWriter（不启动协程，需调用 Start；
-// 连接由 Connect 建立，可在 Start 前或 connectLoop 中反复调用）
+// 连接由 Connect 建立，可在 Init、supervisor 重试中反复调用）
 func NewRecordWriter(conf *ConfModLogMysql, state *module_state2.State) *RecordWriter {
 	w := &RecordWriter{
 		connect: defaultConnector,
@@ -87,6 +93,7 @@ func NewRecordWriter(conf *ConfModLogMysql, state *module_state2.State) *RecordW
 		ch:      make(chan []interface{}, conf.Writer.QueueSize),
 		state:   state,
 		stopCh:  make(chan struct{}),
+		discCh:  make(chan struct{}, 1),
 		connCh:  make(chan struct{}),
 	}
 
@@ -131,8 +138,8 @@ func (w *RecordWriter) Enqueue(row []interface{}) bool {
 	}
 }
 
-// Connect 建立连接并验证连通性；失败不残留句柄，可反复调用。
-// 成功时唤醒挂起的 writeLoop
+// Connect 建立连接并验证连通性；失败不残留句柄，可反复调用（supervisor 专用入口，
+// 运行期单调用者）。成功时换代 connCh：close 当前代唤醒全部等待者，再开新代
 func (w *RecordWriter) Connect() error {
 	if w.Connected() {
 		return nil
@@ -143,45 +150,127 @@ func (w *RecordWriter) Connect() error {
 		return err
 	}
 
-	w.db.Store(db)
-	w.connOnce.Do(func() { close(w.connCh) })
+	old := w.db.Swap(db)
+	if old != nil {
+		// 与 markDown 并发的补偿路径：换代前清掉旧池，保证至多一个有效池
+		old.Close()
+	}
+
+	w.connMu.Lock()
+	close(w.connCh)
+	w.connCh = make(chan struct{})
+	w.connMu.Unlock()
 	return nil
 }
 
-// Connected 报告当前是否已建连
+// Connected 报告当前是否已建连（UP）
 func (w *RecordWriter) Connected() bool {
 	return w.db.Load() != nil
 }
 
-// Start 启动写协程；未连通时同时启动建连重试协程
-func (w *RecordWriter) Start() {
-	w.wg.Add(1)
-	go w.writeLoop()
-	if !w.Connected() {
-		w.wg.Add(1)
-		go w.connectLoop()
+// currentConnCh 返回当前代的建连信号 channel
+func (w *RecordWriter) currentConnCh() chan struct{} {
+	w.connMu.RLock()
+	defer w.connMu.RUnlock()
+	return w.connCh
+}
+
+// waitConnected 挂起至建连成功（返回 true）或 Close（返回 false）。
+// 双重检查消除"读取 channel 与 Connect 换代"之间的竞态
+func (w *RecordWriter) waitConnected() bool {
+	if w.Connected() {
+		return true
+	}
+	ch := w.currentConnCh()
+	if w.Connected() {
+		return true
+	}
+	select {
+	case <-ch:
+		return true
+	case <-w.stopCh:
+		return false
 	}
 }
 
-// connectLoop 建连重试协程：每 ConnectRetryIntervalMs 重试一次 Connect，
-// 成功则计数、置状态并退出（唤醒 writeLoop 后排空积压），失败按节流规则记日志
-func (w *RecordWriter) connectLoop() {
+// markDown 置 DOWN 的唯一入口：摘除并关闭连接池、计数、唤醒 supervisor 重连。
+// 与 Connect 的 db.Swap 互斥——任何时刻至多一个有效池，先到者生效，
+// 后到者拿到 nil 直接返回（幂等，不重复计数）
+func (w *RecordWriter) markDown(reason string) {
+	db := w.db.Swap(nil)
+	if db == nil {
+		return
+	}
+	db.Close()
+
+	w.state.Set("MYSQL_CONN_STATE", "DOWN")
+	w.state.Inc("MYSQL_CONN_LOST", 1)
+	log.Logger.Error("mod_log_mysql: connection lost (%s), reconnecting in background", reason)
+
+	select {
+	case w.discCh <- struct{}{}:
+	default:
+	}
+}
+
+// Start 启动写协程与连接监管协程（均常驻；建连失败/运行期断连由 supervisor 重试）
+func (w *RecordWriter) Start() {
+	w.wg.Add(2)
+	go w.writeLoop()
+	go w.connSupervisor()
+}
+
+// connSupervisor 连接监管协程（常驻）：UP 期等待 markDown 触发（可选周期探活），
+// DOWN 期按 ConnectRetryIntervalMs 重试 Connect 直至成功；退出受 stopCh 控制
+func (w *RecordWriter) connSupervisor() {
 	defer w.wg.Done()
 
 	ticker := time.NewTicker(time.Duration(w.conf.Mysql.ConnectRetryIntervalMs) * time.Millisecond)
 	defer ticker.Stop()
 
-	var attempts int
+	// 可选健康探活：HealthPingIntervalMs > 0 时启用，半开连接场景更早发现断连
+	var pingC <-chan time.Time
+	var pingTicker *time.Ticker
+	if w.conf.Mysql.HealthPingIntervalMs > 0 {
+		pingTicker = time.NewTicker(time.Duration(w.conf.Mysql.HealthPingIntervalMs) * time.Millisecond)
+		pingC = pingTicker.C
+	}
+	if pingTicker != nil {
+		defer pingTicker.Stop()
+	}
+
+	attempts := 0 // 当前 DOWN 周期内的重试次数（每轮 UP 清零），用于日志节流分母
 	for {
+		if w.Connected() {
+			attempts = 0
+			select {
+			case <-w.stopCh:
+				return
+			case <-w.discCh:
+				// markDown 已触发，进入下方 DOWN 重试
+			case <-pingC:
+				if db := w.db.Load(); db != nil {
+					ctx, cancel := context.WithTimeout(context.Background(),
+						time.Duration(w.conf.Mysql.ConnectTimeoutMs)*time.Millisecond)
+					err := db.PingContext(ctx)
+					cancel()
+					if err != nil {
+						w.markDown("health ping failed")
+					}
+				}
+			}
+			continue
+		}
+
 		select {
 		case <-w.stopCh:
 			return
 		case <-ticker.C:
 		}
 
-		attempts++
 		if err := w.Connect(); err != nil {
 			w.state.Inc("MYSQL_CONN_RETRY", 1)
+			attempts++
 			// 日志节流：第 1-3 次 Error，第 4 次起每 10 次 Warn 一条
 			switch {
 			case attempts <= 3:
@@ -195,11 +284,11 @@ func (w *RecordWriter) connectLoop() {
 		w.state.Inc("MYSQL_CONN_OK", 1)
 		w.state.Set("MYSQL_CONN_STATE", "UP")
 		log.Logger.Info("mod_log_mysql: connected to mysql (after %d retries), draining buffered records", attempts)
-		return
 	}
 }
 
-// writeLoop 写协程：攒批（BatchSize 条或 FlushIntervalMs 先到先发）
+// writeLoop 写协程：攒批（BatchSize 条或 FlushIntervalMs 先到先发）。
+// DOWN 期挂起不消费（行数据在缓冲队列堆积，背压见 Enqueue），UP 后恢复
 func (w *RecordWriter) writeLoop() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -208,19 +297,6 @@ func (w *RecordWriter) writeLoop() {
 		}
 		w.wg.Done()
 	}()
-
-	// 闸：未连通前挂起、不消费 ch，行数据在缓冲队列中堆积（背压见 Enqueue）。
-	// Close 可在建连前到达；若建连与关闭几乎同时，优先按已连通处理——
-	// 主循环会立即命中 stopCh 并走 drain 兜底，避免残留行丢失
-	select {
-	case <-w.connCh:
-	case <-w.stopCh:
-		select {
-		case <-w.connCh:
-		default:
-			return
-		}
-	}
 
 	ticker := time.NewTicker(time.Duration(w.conf.Writer.FlushIntervalMs) * time.Millisecond)
 	defer ticker.Stop()
@@ -238,6 +314,11 @@ func (w *RecordWriter) writeLoop() {
 	}
 
 	for {
+		// 每个写周期前确保连通；DOWN 时挂起（可反复进入），Close 时退出
+		if !w.waitConnected() {
+			return
+		}
+
 		select {
 		case <-w.stopCh:
 			// drain 残留数据后最终 flush
@@ -266,8 +347,10 @@ func (w *RecordWriter) writeLoop() {
 	}
 }
 
-// writeBatchWithRetry 单事务批插，失败按 200ms/400ms/800ms 退避重试至 MaxRetries，
-// 耗尽则计数 SEND_MYSQL_FAILED 丢弃该批
+// writeBatchWithRetry 单事务批插，失败按 200ms/400ms/800ms 退避重试至 MaxRetries。
+// 耗尽即判定连接失效：markDown 置 DOWN 触发 supervisor 重连，并持有该批
+// 待重连成功后优先补写（不占 QueueSize、保序优于 re-enqueue）；补写仍失败
+// 才计数 SEND_MYSQL_FAILED 丢弃。运行期断连因此不再线性丢批
 func (w *RecordWriter) writeBatchWithRetry(batch [][]interface{}) {
 	var err error
 	for attempt := 0; attempt <= w.conf.Writer.MaxRetries; attempt++ {
@@ -279,6 +362,11 @@ func (w *RecordWriter) writeBatchWithRetry(batch [][]interface{}) {
 			time.Sleep(time.Duration(backoff) * time.Millisecond)
 		}
 
+		if !w.Connected() {
+			err = fmt.Errorf("mod_log_mysql: not connected")
+			break
+		}
+
 		err = w.writeBatch(batch)
 		if err == nil {
 			w.state.Inc("WRITE_BATCH_SIZE", len(batch))
@@ -288,12 +376,23 @@ func (w *RecordWriter) writeBatchWithRetry(batch [][]interface{}) {
 			attempt+1, w.conf.Writer.MaxRetries+1, err)
 	}
 
+	w.markDown("write retry exhausted")
+
+	// 持有该批，等待重连成功后优先补写；Close 到达则批随进程消亡（既有语义）
+	if !w.waitConnected() {
+		return
+	}
+	if err := w.writeBatch(batch); err == nil {
+		w.state.Inc("WRITE_BATCH_SIZE", len(batch))
+		return
+	}
 	w.state.Inc("SEND_MYSQL_FAILED", 1)
-	log.Logger.Error("mod_log_mysql: write batch failed after %d retries, dropped %d rows",
-		w.conf.Writer.MaxRetries, len(batch))
+	log.Logger.Error("mod_log_mysql: rewrite after reconnect failed, dropped %d rows", len(batch))
 }
 
-// writeBatch 单事务执行多值 INSERT ... ON DUPLICATE KEY UPDATE
+// writeBatch 单事务执行多值 INSERT ... ON DUPLICATE KEY UPDATE。
+// 事务带 BatchTimeoutMs 超时：BeginTx 约束拨号、ExecContext 约束执行；
+// Commit/Rollback 由 DSN writeTimeout 同值约束（stdlib 的 sql.Tx 无 CommitContext）
 func (w *RecordWriter) writeBatch(batch [][]interface{}) error {
 	db := w.db.Load()
 	if db == nil {
@@ -305,12 +404,16 @@ func (w *RecordWriter) writeBatch(batch [][]interface{}) error {
 		args = append(args, row...)
 	}
 
-	txn, err := db.Begin()
+	ctx, cancel := context.WithTimeout(context.Background(),
+		time.Duration(w.conf.Writer.BatchTimeoutMs)*time.Millisecond)
+	defer cancel()
+
+	txn, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	_, err = txn.Exec(w.buildStmt(len(batch)), args...)
+	_, err = txn.ExecContext(ctx, w.buildStmt(len(batch)), args...)
 	if err != nil {
 		txn.Rollback()
 		return err

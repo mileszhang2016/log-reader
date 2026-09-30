@@ -64,6 +64,7 @@ go test ./tests/integration/implementation/scenario-LR01-basic-flow/ -run TestLR
 | LR03 新字段写入与零值规则 | 验证 ai-cache/流量镜像/ai-intent 10 新列全字段写入精确取值（浮点列、bool→TINYINT 转换）与缺省形态（NOT NULL 字符串列→空串，mirror_hit→0，三个可空意图数值列→NULL=未求值；显式置 0→写 0 可区分） |
 | LR04 启动不可达后台重试 | 验证 MySQL 不可达时 log-reader 不退出：`MYSQL_CONN_STATE=DOWN` 且 `MYSQL_CONN_RETRY` 增长，日志照常入队缓冲（`WRITE_BATCH_SIZE=0`）；MySQL 恢复后自动建连（`STATE=UP`、`MYSQL_CONN_OK=1`）并排空积压（行数与 logid 一致）。依赖 Docker（testcontainers Pause/Unpause）；外部 `LR_MYSQL_DSN` 环境 skip |
 | LR04 配置错误仍 fail-fast | 验证 `Mysql.Addr` 置空（配置错误）时进程退出且退出码非 0，守护"配置错误立即退出、连通性错误不退出"的分界。无需 MySQL |
+| LR04 运行期断连自动重连 | 验证已建连后 MySQL 挂掉：DOWN 在 `BatchTimeoutMs` 决定的有限窗口内出现（进程不挂死），断连期行入队缓冲；恢复后自动重连（`MYSQL_CONN_LOST=1`、`SEND_MYSQL_FAILED=0`）并排空落库。依赖 Docker（testcontainers Pause/Unpause）；外部 `LR_MYSQL_DSN` 环境 skip |
 
 ## Mock 说明
 

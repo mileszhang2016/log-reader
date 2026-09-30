@@ -39,6 +39,7 @@ var COUNTER_KEYS = []string{
 	"WRITE_BATCH_SIZE",    // 每批实际条数累计（diff 求均值观测批大小）
 	"MYSQL_CONN_RETRY",    // 建连重试累计次数（重试协程每次失败 +1）
 	"MYSQL_CONN_OK",       // 建连成功累计次数
+	"MYSQL_CONN_LOST",     // 运行期断连次数（写重试耗尽/探活失败触发 markDown 计数）
 }
 
 // state 键值（非 counter）：MYSQL_CONN_STATE = UP / DOWN，

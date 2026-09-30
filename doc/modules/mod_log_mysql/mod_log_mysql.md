@@ -19,34 +19,38 @@
 ```
 Init: 尽力建连一次（Connect：open + 超时 ping）
   ├─ 成功 → MYSQL_CONN_STATE=UP（与常规启动完全一致）
-  └─ 失败 → Error 日志一次，STATE=DOWN（非致命）；Start 起写协程 + 建连重试协程
-connectLoop: 每 ConnectRetryIntervalMs 重试 Connect；成功 → STATE=UP 并唤醒写协程
-writeLoop: 建连信号（connCh）到达前挂起、不消费队列（行数据堆积）；
-           连通后攒批（BatchSize 或 FlushIntervalMs）→ 事务批插 → 失败退避重试
+  └─ 失败 → Error 日志一次，STATE=DOWN（非致命）
+Start: 起 writeLoop + 常驻 connSupervisor
+connSupervisor: UP 期等待 markDown 触发（可选周期探活 HealthPingIntervalMs）；
+                DOWN 期按 ConnectRetryIntervalMs 重试 Connect，成功 → STATE=UP 并唤醒写协程
+writeLoop: DOWN 期挂起不消费（行数据堆积）；UP 后按批攒批
+           （BatchSize 或 FlushIntervalMs）→ 事务批插（BatchTimeoutMs 超时约束）
 Update: 过滤仅 BfeLogType_Request → mod_fields 抽取 → field_mapper 组装行
   → recordCh（容量 QueueSize，满丢弃计数 SENT_MYSQL_CHN_FULL）
-Close: connectLoop 直接退出；writeLoop drain 残留批后最终 flush；
+写失败: 退避重试 MaxRetries 耗尽 → markDown（STATE=DOWN、MYSQL_CONN_LOST+1、
+        持有该批）→ 重连成功后优先补写；补写仍失败才计 SEND_MYSQL_FAILED 丢弃
+Close: 两协程退出；writeLoop drain 残留批后最终 flush；
        从未连通则丢弃缓冲行并记 Info 日志
 ```
 
-## 启动连接行为（后台重试）
+## 连接容错行为（启动重试 + 运行期断连自动重连）
 
-启动时 MySQL（`bfe_report`）未就绪**不再导致 log-reader 退出**（v1.4 之前为 fail-fast）。
-行为分界：
+启动时 MySQL（`bfe_report`）未就绪**不再导致 log-reader 退出**；运行期 MySQL 挂掉后**自动重连**，不再线性丢批。行为分界：
 
 | 错误类别 | 示例 | 行为 |
 | -------- | ---- | ---- |
 | 配置错误 | 配置文件缺失/格式错误；`Mysql.Addr`/`User`/`DBName`/`Table` 为空 | **仍 fail-fast**：`Init` 返回错误，进程退出 |
-| 连通性错误 | 网络不可达、MySQL 未启动、认证失败（1045）、库不存在（1049） | **后台重试**：`Init` 返回成功，重试协程按 `ConnectRetryIntervalMs` 间隔持续建连 |
+| 连通性错误 | 网络不可达、MySQL 未启动/被杀、认证失败（1045）、库不存在（1049） | **后台重试**：`Init`/写路径不失败退出，`connSupervisor` 按 `ConnectRetryIntervalMs` 持续建连 |
 
-断连期间的语义：
+断连期间（启动 DOWN 或运行期 markDown 后）的语义：
 
-- **缓冲**：`Update` 照常入队，行数据在 `QueueSize` 容量的队列中堆积；连通后 writeLoop 按批排空补写。幂等键保证补写/重放不产生重复行；
+- **缓冲**：`Update` 照常入队，行数据在 `QueueSize` 容量的队列中堆积；重连后 writeLoop 按批排空补写，运行期断连时失败批**持有优先补写**（不占 `QueueSize`）。幂等键保证补写/重放不产生重复行；
 - **背压**：队列满时 `Enqueue` 丢弃并计 `SENT_MYSQL_CHN_FULL`，与连通期语义一致。可容忍的断连窗口 ≈ `QueueSize` ÷ 日志速率，超窗即丢，需按部署速率评估 `QueueSize`；
-- **超时控制**：单次建连受 `ConnectTimeoutMs` 约束（`PingContext`），避免目标 IP 被黑洞时卡在 OS 级 TCP 超时；
-- **日志节流**：启动失败 Error 一次；重试第 1–3 次 Error、之后每 10 次 Warn 一条；建连成功 Info 一次（含重试次数）；
+- **超时控制**：建连受 `ConnectTimeoutMs` 约束（`PingContext` + DSN `timeout` 拨号参数）；单批事务受 `BatchTimeoutMs` 约束（`ExecContext` + DSN `writeTimeout`）——网络分区（DROP）下写路径秒级失败而非挂死到 OS 级 TCP 超时；
+- **日志节流**：启动/重连失败第 1–3 次 Error、之后每 10 次 Warn 一条；建连成功 Info 一次；`markDown` 时 Error 一条（含原因）；
 - **认证失败/库不存在**靠重试不自愈：重试日志持续提示根因，修复方式是改配置重启（log-reader 无配置热加载）；
-- **运行期断连**：维持原语义——写失败按 `MaxRetries` 退避重试后丢弃并计 `SEND_MYSQL_FAILED`，进程不退出；连接池在网络恢复后自行换连接恢复写入。
+- **可选探活**：`HealthPingIntervalMs > 0` 时 supervisor 在 UP 期周期 `PingContext`，失败即 `markDown`——面向半开连接（防火墙断链、NAT 超时）场景更早发现断连，默认关闭；
+- **行序**：断连窗口内 pending 批优先补写 + 队列重排，窗口内行序与到达序可能不一致；消费侧以 `log_time`+`logid` 为准，分钟聚合报表不受影响。
 
 ## 基础配置
 
@@ -98,19 +102,21 @@ Modules = mod_log_mysql
 | `CONVERT_FAILED` | 行组装失败条数 | 持续增长需排查字段映射 |
 | `SENT_TO_MYSQL` | 成功入队条数 | 停滞 = 写入管道异常 |
 | `SENT_MYSQL_CHN_FULL` | 队列满丢弃条数（背压） | 持续增长说明 MySQL 写入跟不上，调大 QueueSize/BatchSize 或排查库端 |
-| `SEND_MYSQL_FAILED` | 重试耗尽丢弃批数 | >0 即需告警（库不可用/权限/锁冲突），数据缺口靠 `-b` 补读重放 |
+| `SEND_MYSQL_FAILED` | 重试耗尽且重连后补写仍失败、丢弃的批数 | >0 即需告警（结构性错误：表被删/权限收回）；运行期断连本身不再贡献该计数（二期起） |
 | `WRITE_BATCH_SIZE` | 每批实际条数累计 | diff 均值观测批大小是否符合预期 |
-| `MYSQL_CONN_STATE` | 建连状态 `UP`/`DOWN` | `DOWN` = MySQL 不可达，进程在后台重试；`UP→DOWN` 跳变或长期 `DOWN` 建议告警 |
+| `MYSQL_CONN_STATE` | 建连状态 `UP`/`DOWN` | `DOWN` = MySQL 不可达（启动未连通或运行期断连），supervisor 在后台重试；`UP→DOWN` 跳变或长期 `DOWN` 建议告警 |
 | `MYSQL_CONN_RETRY` | 建连重试累计次数 | 随 `ConnectRetryIntervalMs` 节奏增长即重试循环正常 |
-| `MYSQL_CONN_OK` | 建连成功累计次数 | 启动以来成功建连次数（正常运行恒为 1） |
+| `MYSQL_CONN_OK` | 建连成功累计次数 | 启动以来成功建连次数（正常运行恒为 1，每次运行期重连 +1） |
+| `MYSQL_CONN_LOST` | 运行期断连次数 | 写重试耗尽或探活失败触发；持续增长说明链路抖动或 MySQL 不稳定 |
 
 ## 排障要点
 
 1. 启动报连接/权限错误：模块**不再退出**，进程保持运行并在后台重试（`MYSQL_CONN_STATE=DOWN`）——检查 `mod_log_mysql.conf` 的 DSN 与专用账号权限（仅需目标表 INSERT/UPDATE，无 DDL/DELETE），修复后重启进程；若 `DOWN` 且重试日志持续为认证失败（1045）/库不存在（1049），改配置重启，重试本身不会自愈；
 2. `MYSQL_CONN_STATE=DOWN` 期间 `SENT_TO_MYSQL` 仍在增长：日志在缓冲队列堆积，关注 `SENT_MYSQL_CHN_FULL` 是否持续增长（超窗丢弃），连通后积压自动补写；
 3. `SENT_TO_MYSQL` 不增长但 `RECEIVED_LOGS` 增长：写协程异常，查进程日志与 pprof；
-4. `SEND_MYSQL_FAILED` 增长：先 `SHOW ENGINE INNODB STATUS` / 检查唯一键冲突外的错误（死锁、超时、磁盘），恢复后对 pb 日志 `bfe-pblog-tool` 导出比对缺口，停插件后 `-b` 补读重放；
-5. 表不存在错误：部署流程漏执行 ai-gateway-api 仓库的 `db_ddl_report_mysql.sql`。
+4. `SEND_MYSQL_FAILED` 增长：先 `SHOW ENGINE INNODB STATUS` / 检查唯一键冲突外的错误（死锁、超时、磁盘）；该计数在运行期断连下应接近 0（断连触发的是 DOWN/重连而非丢批），若随断连增长需排查 `BatchTimeoutMs` 是否小于正常批执行时间。恢复后对 pb 日志 `bfe-pblog-tool` 导出比对缺口，停插件后 `-b` 补读重放；
+5. `MYSQL_CONN_LOST` 增长 / `MYSQL_CONN_STATE` 反复跳变：链路抖动或 MySQL 不稳定，结合 `MYSQL_CONN_RETRY` 增长速率判断；持续为认证失败（1045）则改配置重启；
+6. 表不存在错误：部署流程漏执行 ai-gateway-api 仓库的 `db_ddl_report_mysql.sql`。
 
 ## 与 mod_kafka 的关系
 

@@ -21,8 +21,9 @@
 | Mysql.Password | String | 密码 | N | 仅存在于本配置文件 | - |
 | Mysql.DBName | String | 目标库名 | Y | 如 `bfe_report` | 非空 |
 | Mysql.Table | String | 目标表名 | Y | 如 `bfe_ai_request_log`；表由 ai-gateway-api 仓库 `db_ddl_report_mysql.sql` 创建，插件不自动建表 | 非空 |
-| Mysql.ConnectTimeoutMs | Integer | 单次 connect/ping 超时（毫秒） | N | 默认值 `3000`；约束单次建连尝试上限（`PingContext`），防止目标 IP 被黑洞时卡在 OS 级 TCP 超时 | > 0 |
-| Mysql.ConnectRetryIntervalMs | Integer | 建连重试间隔（毫秒） | N | 默认值 `3000`；启动未连通时后台重试的间隔，直至建连成功 | > 0 |
+| Mysql.ConnectTimeoutMs | Integer | 单次 connect/ping 超时（毫秒） | N | 默认值 `3000`；约束单次建连尝试上限（`PingContext` + DSN `timeout` 拨号参数），防止目标 IP 被黑洞时卡在 OS 级 TCP 超时 | > 0 |
+| Mysql.ConnectRetryIntervalMs | Integer | 建连重试间隔（毫秒） | N | 默认值 `3000`；启动未连通或运行期断连时后台重试的间隔，直至建连成功 | > 0 |
+| Mysql.HealthPingIntervalMs | Integer | UP 期健康探活间隔（毫秒） | N | 默认值 `0`（关闭）；>0 时 supervisor 按间隔 `PingContext`，失败即置 DOWN 并触发重连——面向半开连接（防火墙断链、NAT 超时）场景更早发现断连 | >= 0 |
 
 ### 批量写入配置
 
@@ -31,7 +32,8 @@
 | Writer.QueueSize | Integer | 缓冲队列容量（条） | N | 默认值 `2000`；断连期可缓存的行数上限，超窗丢弃（计 `SENT_MYSQL_CHN_FULL`） | > 0 |
 | Writer.BatchSize | Integer | 攒批条数 | N | 默认值 `200` | > 0 |
 | Writer.FlushIntervalMs | Integer | 攒批超时（毫秒） | N | 默认值 `2000`；与 BatchSize 先到先发 | > 0 |
-| Writer.MaxRetries | Integer | 写失败重试次数 | N | 默认值 `3`；退避间隔 200ms/400ms/800ms，耗尽丢弃该批（计 `SEND_MYSQL_FAILED`） | > 0 |
+| Writer.MaxRetries | Integer | 写失败重试次数 | N | 默认值 `3`；退避间隔 200ms/400ms/800ms；耗尽即触发断连重连，持有该批待重连后优先补写，补写仍失败才丢弃（计 `SEND_MYSQL_FAILED`） | > 0 |
+| Writer.BatchTimeoutMs | Integer | 单批事务执行超时（毫秒） | N | 默认值 `30000`；`ExecContext` 截止时间 + DSN `writeTimeout`，约束网络分区下的写路径挂起时长。**必须大于正常 P99 批执行时间**，否则大批/索引抖动会被误判为断连 | > 0 |
 | Writer.MaxOpenConns | Integer | 连接池最大打开连接数 | N | 默认值 `10` | > 0 |
 | Writer.MaxIdleConns | Integer | 连接池最大空闲连接数 | N | 默认值 `5` | > 0 |
 
@@ -56,9 +58,13 @@ Table = bfe_ai_request_log
 # single connect/ping timeout in milliseconds (default 3000)
 ConnectTimeoutMs = 3000
 
-# interval between connect retries in milliseconds (default 3000);
-# log-reader stays up and retries in background when mysql is unreachable at startup
+# interval between connect retries in milliseconds (default 3000)
+# (log-reader stays up and retries in background when mysql is unreachable
+#  at startup or lost at runtime)
 ConnectRetryIntervalMs = 3000
+
+# UP-period health ping interval in milliseconds (default 0 = disabled)
+HealthPingIntervalMs = 0
 
 [Writer]
 # record buffer queue size (records)
@@ -71,7 +77,13 @@ BatchSize = 200
 FlushIntervalMs = 2000
 
 # max retries on write failure (backoff 200ms/400ms/800ms)
+# (after exhaustion the batch is held and rewritten once reconnect succeeds)
 MaxRetries = 3
+
+# single batch transaction timeout in milliseconds (default 30000)
+# (ExecContext deadline and driver writeTimeout; must exceed the normal P99
+#  batch execution time)
+BatchTimeoutMs = 30000
 
 # connection pool
 MaxOpenConns = 10
@@ -89,8 +101,9 @@ MaxIdleConns = 5
 | CONVERT_FAILED | 行组装失败条数 |
 | SENT_TO_MYSQL | 成功入队条数（断连期照常增长，行在缓冲队列） |
 | SENT_MYSQL_CHN_FULL | 队列满丢弃条数（背压） |
-| SEND_MYSQL_FAILED | 写失败重试耗尽丢弃的批数 |
+| SEND_MYSQL_FAILED | 重试耗尽且重连后补写仍失败、丢弃的批数（运行期断连本身不贡献） |
 | WRITE_BATCH_SIZE | 每批实际条数累计 |
 | MYSQL_CONN_STATE | 建连状态 `UP`/`DOWN`（state 键值） |
 | MYSQL_CONN_RETRY | 建连重试累计次数 |
 | MYSQL_CONN_OK | 建连成功累计次数 |
+| MYSQL_CONN_LOST | 运行期断连次数（写重试耗尽/探活失败触发） |

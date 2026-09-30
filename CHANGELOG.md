@@ -13,10 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- `mod_log_mysql` startup is no longer fail-fast on MySQL connectivity errors: if `bfe_report` is unreachable at startup, log-reader stays up and `RecordWriter` keeps retrying in background (new `[mysql]` options `ConnectTimeoutMs` / `ConnectRetryIntervalMs`, both default 3000). Config errors (missing/empty `Addr`/`User`/`DBName`/`Table`) still fail fast. While disconnected, rows buffer in the queue (existing `QueueSize` backpressure) and drain automatically after connect; new monitor keys `MYSQL_CONN_STATE` (UP/DOWN), `MYSQL_CONN_RETRY`, `MYSQL_CONN_OK`.
+- `mod_log_mysql` startup is no longer fail-fast on MySQL connectivity errors: if `bfe_report` is unreachable at startup, log-reader stays up and the writer keeps retrying in background (new `[mysql]` options `ConnectTimeoutMs` / `ConnectRetryIntervalMs`, both default 3000). Config errors (missing/empty `Addr`/`User`/`DBName`/`Table`) still fail fast. While disconnected, rows buffer in the queue (existing `QueueSize` backpressure) and drain automatically after connect; new monitor keys `MYSQL_CONN_STATE` (UP/DOWN), `MYSQL_CONN_RETRY`, `MYSQL_CONN_OK`.
+- `mod_log_mysql` runtime disconnect now auto-reconnects instead of dropping batches: write retries exhaustion marks the connection down (`MYSQL_CONN_LOST`), a supervisor goroutine reconnects in background, and the held batch is rewritten first after reconnect — `SEND_MYSQL_FAILED` no longer grows with disconnect duration. Write path is bounded by new timeouts (`BatchTimeoutMs` for batch transactions via ExecContext + driver writeTimeout, dial timeout via DSN `timeout`), so network partitions fail within seconds instead of hanging on OS-level TCP timeouts. Optional UP-period health ping via `HealthPingIntervalMs` (default 0 = disabled).
 
 ### Added
-- Integration test scenario LR04 (mysql down at startup: process stays up, retries, recovers and drains; config error still exits). Requires Docker; `LR_MYSQL_DSN`-only environments skip the pause-based case.
+- Integration test scenario LR04 (mysql down at startup: process stays up, retries, recovers and drains; config error still exits; runtime disconnect auto-reconnect with zero drops). Requires Docker; `LR_MYSQL_DSN`-only environments skip the pause-based cases.
 
 ## [v1.4.0] - 2026-09-24
 
