@@ -16,11 +16,18 @@ package mod_log_mysql
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/bfenetworks/go-lib/web-monitor/web_monitor"
+
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
+	"github.com/rainway-ai-gateway/log-reader/reader_conf"
 )
 
 func TestModuleLogMysql_Name(t *testing.T) {
@@ -39,10 +46,12 @@ func TestModuleLogMysql_Close_NilWriter(t *testing.T) {
 
 // fakeRecordWriter implements recordWriter for Update tests.
 type fakeRecordWriter struct {
-	enqueueOk bool
-	enqueued  int
-	started   bool
-	closed    bool
+	enqueueOk  bool
+	enqueued   int
+	started    bool
+	closed     bool
+	connected  bool
+	connectErr error
 }
 
 func (f *fakeRecordWriter) Enqueue(row []interface{}) bool {
@@ -51,8 +60,10 @@ func (f *fakeRecordWriter) Enqueue(row []interface{}) bool {
 	}
 	return f.enqueueOk
 }
-func (f *fakeRecordWriter) Start() { f.started = true }
-func (f *fakeRecordWriter) Close() { f.closed = true }
+func (f *fakeRecordWriter) Connect() error  { return f.connectErr }
+func (f *fakeRecordWriter) Connected() bool { return f.connected }
+func (f *fakeRecordWriter) Start()          { f.started = true }
+func (f *fakeRecordWriter) Close()          { f.closed = true }
 
 // failMapper implements fieldMapper returning an error.
 type failMapper struct{}
@@ -203,4 +214,77 @@ func TestModuleLogMysql_MonitorHandlers(t *testing.T) {
 	if _, err := getStateDiff(url.Values{}); err != nil {
 		t.Fatalf("getStateDiff failed: %v", err)
 	}
+}
+
+// TestModuleLogMysql_InitMysqlUnreachable: a connectivity error at Init must be
+// non-fatal (Init returns nil, state DOWN, writer created unconnected).
+func TestModuleLogMysql_InitMysqlUnreachable(t *testing.T) {
+	// address that refuses connections
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	confRoot := writeInitConf(t, fmt.Sprintf(`
+[mysql]
+Addr = %s
+User = report
+DBName = bfe_report
+Table = bfe_ai_request_log
+ConnectTimeoutMs = 1000
+ConnectRetryIntervalMs = 50
+`, addr))
+
+	m := NewModuleLogMysql()
+	if err := m.Init(newInitReaderConfig(), web_monitor.NewWebHandlers(), confRoot); err != nil {
+		t.Fatalf("Init should be non-fatal on unreachable mysql, got: %v", err)
+	}
+	defer m.Close()
+
+	if got := m.state.GetState("MYSQL_CONN_STATE"); got != "DOWN" {
+		t.Errorf("MYSQL_CONN_STATE = %q, want DOWN", got)
+	}
+	if m.writer == nil {
+		t.Fatal("writer should be created")
+	}
+	if m.writer.Connected() {
+		t.Error("writer should not be connected")
+	}
+}
+
+// TestModuleLogMysql_InitInvalidConf: config errors stay fail-fast.
+func TestModuleLogMysql_InitInvalidConf(t *testing.T) {
+	// empty Addr: rejected by ConfModLogMysqlCheck
+	confRoot := writeInitConf(t, `
+[mysql]
+User = report
+DBName = bfe_report
+Table = bfe_ai_request_log
+`)
+
+	m := NewModuleLogMysql()
+	if err := m.Init(newInitReaderConfig(), web_monitor.NewWebHandlers(), confRoot); err == nil {
+		t.Fatal("Init should fail-fast on config error (empty Addr)")
+	}
+}
+
+func newInitReaderConfig() *reader_conf.ReaderConfig {
+	return &reader_conf.ReaderConfig{
+		Main: reader_conf.ConfBasic{ProgramName: "log-reader", MonitorInterval: 20},
+	}
+}
+
+func writeInitConf(t *testing.T, content string) string {
+	t.Helper()
+	confRoot := t.TempDir()
+	modDir := filepath.Join(confRoot, "mod_log_mysql")
+	if err := os.MkdirAll(modDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modDir, "mod_log_mysql.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return confRoot
 }
