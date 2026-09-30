@@ -32,11 +32,13 @@ type ConfModLogMysql struct {
 
 // ConfMysql MySQL 连接配置
 type ConfMysql struct {
-	Addr     string // MySQL 地址，如 127.0.0.1:3306
-	User     string // 用户名（专用最小权限账号）
-	Password string // 密码
-	DBName   string // 目标库名
-	Table    string // 目标表名
+	Addr                   string // MySQL 地址，如 127.0.0.1:3306
+	User                   string // 用户名（专用最小权限账号）
+	Password               string // 密码
+	DBName                 string // 目标库名
+	Table                  string // 目标表名
+	ConnectTimeoutMs       int    // 单次 connect/ping 超时（毫秒）
+	ConnectRetryIntervalMs int    // 建连重试间隔（毫秒），启动未连通时后台重试
 }
 
 // ConfLogMysqlWriter 批量写入配置
@@ -87,6 +89,16 @@ func ConfModLogMysqlCheck(cfg *ConfModLogMysql) error {
 
 	if cfg.Mysql.Table == "" {
 		return fmt.Errorf("Mysql.Table is empty")
+	}
+
+	if cfg.Mysql.ConnectTimeoutMs <= 0 {
+		log.Logger.Warn("mod_log_mysql: Mysql.ConnectTimeoutMs[%d] <= 0, use default value(3000)", cfg.Mysql.ConnectTimeoutMs)
+		cfg.Mysql.ConnectTimeoutMs = 3000
+	}
+
+	if cfg.Mysql.ConnectRetryIntervalMs <= 0 {
+		log.Logger.Warn("mod_log_mysql: Mysql.ConnectRetryIntervalMs[%d] <= 0, use default value(3000)", cfg.Mysql.ConnectRetryIntervalMs)
+		cfg.Mysql.ConnectRetryIntervalMs = 3000
 	}
 
 	if cfg.Writer.QueueSize <= 0 {

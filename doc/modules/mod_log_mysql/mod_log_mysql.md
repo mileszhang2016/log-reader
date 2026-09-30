@@ -10,20 +10,43 @@
 
 - 消费 BFE 访问日志（仅 `Request` 类型，会话日志丢弃），按固定列清单组装数据行
 - 批量写入 MySQL：缓冲队列 + 单写协程攒批（条数/超时双阈值），单事务多值 `INSERT ... ON DUPLICATE KEY UPDATE` 幂等覆盖
+- **启动连接容错**：MySQL 不可达时进程不退出，后台按 `ConnectRetryIntervalMs` 持续重试；建连成功前新日志在缓冲队列堆积，连通后自动排空补写
 - 背压保护：队列满非阻塞丢弃并计数，写失败指数退避重试
 - web-monitor 监控：`mod_log_mysql` / `mod_log_mysql_diff`
 
 ## 数据流
 
 ```
-Update(batch []*BfeLog)
-  → 过滤仅 BfeLogType_Request（会话日志丢弃）
-  → mod_fields 抽取（与 mod_kafka 共用字段注册表）→ field_mapper 组装行
-    字符串零值 → NULL；数值/布尔原样；JSON 列 marshal；apikeytags 打平 level1~5
+Init: 尽力建连一次（Connect：open + 超时 ping）
+  ├─ 成功 → MYSQL_CONN_STATE=UP（与常规启动完全一致）
+  └─ 失败 → Error 日志一次，STATE=DOWN（非致命）；Start 起写协程 + 建连重试协程
+connectLoop: 每 ConnectRetryIntervalMs 重试 Connect；成功 → STATE=UP 并唤醒写协程
+writeLoop: 建连信号（connCh）到达前挂起、不消费队列（行数据堆积）；
+           连通后攒批（BatchSize 或 FlushIntervalMs）→ 事务批插 → 失败退避重试
+Update: 过滤仅 BfeLogType_Request → mod_fields 抽取 → field_mapper 组装行
   → recordCh（容量 QueueSize，满丢弃计数 SENT_MYSQL_CHN_FULL）
-写协程：攒批（BatchSize 或 FlushIntervalMs）→ 事务批插 → 失败退避重试
-Close：drain 残留批 → 关闭连接池
+Close: connectLoop 直接退出；writeLoop drain 残留批后最终 flush；
+       从未连通则丢弃缓冲行并记 Info 日志
 ```
+
+## 启动连接行为（后台重试）
+
+启动时 MySQL（`bfe_report`）未就绪**不再导致 log-reader 退出**（v1.4 之前为 fail-fast）。
+行为分界：
+
+| 错误类别 | 示例 | 行为 |
+| -------- | ---- | ---- |
+| 配置错误 | 配置文件缺失/格式错误；`Mysql.Addr`/`User`/`DBName`/`Table` 为空 | **仍 fail-fast**：`Init` 返回错误，进程退出 |
+| 连通性错误 | 网络不可达、MySQL 未启动、认证失败（1045）、库不存在（1049） | **后台重试**：`Init` 返回成功，重试协程按 `ConnectRetryIntervalMs` 间隔持续建连 |
+
+断连期间的语义：
+
+- **缓冲**：`Update` 照常入队，行数据在 `QueueSize` 容量的队列中堆积；连通后 writeLoop 按批排空补写。幂等键保证补写/重放不产生重复行；
+- **背压**：队列满时 `Enqueue` 丢弃并计 `SENT_MYSQL_CHN_FULL`，与连通期语义一致。可容忍的断连窗口 ≈ `QueueSize` ÷ 日志速率，超窗即丢，需按部署速率评估 `QueueSize`；
+- **超时控制**：单次建连受 `ConnectTimeoutMs` 约束（`PingContext`），避免目标 IP 被黑洞时卡在 OS 级 TCP 超时；
+- **日志节流**：启动失败 Error 一次；重试第 1–3 次 Error、之后每 10 次 Warn 一条；建连成功 Info 一次（含重试次数）；
+- **认证失败/库不存在**靠重试不自愈：重试日志持续提示根因，修复方式是改配置重启（log-reader 无配置热加载）；
+- **运行期断连**：维持原语义——写失败按 `MaxRetries` 退避重试后丢弃并计 `SEND_MYSQL_FAILED`，进程不退出；连接池在网络恢复后自行换连接恢复写入。
 
 ## 基础配置
 
@@ -77,13 +100,17 @@ Modules = mod_log_mysql
 | `SENT_MYSQL_CHN_FULL` | 队列满丢弃条数（背压） | 持续增长说明 MySQL 写入跟不上，调大 QueueSize/BatchSize 或排查库端 |
 | `SEND_MYSQL_FAILED` | 重试耗尽丢弃批数 | >0 即需告警（库不可用/权限/锁冲突），数据缺口靠 `-b` 补读重放 |
 | `WRITE_BATCH_SIZE` | 每批实际条数累计 | diff 均值观测批大小是否符合预期 |
+| `MYSQL_CONN_STATE` | 建连状态 `UP`/`DOWN` | `DOWN` = MySQL 不可达，进程在后台重试；`UP→DOWN` 跳变或长期 `DOWN` 建议告警 |
+| `MYSQL_CONN_RETRY` | 建连重试累计次数 | 随 `ConnectRetryIntervalMs` 节奏增长即重试循环正常 |
+| `MYSQL_CONN_OK` | 建连成功累计次数 | 启动以来成功建连次数（正常运行恒为 1） |
 
 ## 排障要点
 
-1. 启动报连接/权限错误：检查 `mod_log_mysql.conf` 的 DSN 与专用账号权限（仅需目标表 INSERT/UPDATE，无 DDL/DELETE）；
-2. `SENT_TO_MYSQL` 不增长但 `RECEIVED_LOGS` 增长：写协程异常，查进程日志与 pprof；
-3. `SEND_MYSQL_FAILED` 增长：先 `SHOW ENGINE INNODB STATUS` / 检查唯一键冲突外的错误（死锁、超时、磁盘），恢复后对 pb 日志 `bfe-pblog-tool` 导出比对缺口，停插件后 `-b` 补读重放；
-4. 表不存在错误：部署流程漏执行 ai-gateway-api 仓库的 `db_ddl_report_mysql.sql`。
+1. 启动报连接/权限错误：模块**不再退出**，进程保持运行并在后台重试（`MYSQL_CONN_STATE=DOWN`）——检查 `mod_log_mysql.conf` 的 DSN 与专用账号权限（仅需目标表 INSERT/UPDATE，无 DDL/DELETE），修复后重启进程；若 `DOWN` 且重试日志持续为认证失败（1045）/库不存在（1049），改配置重启，重试本身不会自愈；
+2. `MYSQL_CONN_STATE=DOWN` 期间 `SENT_TO_MYSQL` 仍在增长：日志在缓冲队列堆积，关注 `SENT_MYSQL_CHN_FULL` 是否持续增长（超窗丢弃），连通后积压自动补写；
+3. `SENT_TO_MYSQL` 不增长但 `RECEIVED_LOGS` 增长：写协程异常，查进程日志与 pprof；
+4. `SEND_MYSQL_FAILED` 增长：先 `SHOW ENGINE INNODB STATUS` / 检查唯一键冲突外的错误（死锁、超时、磁盘），恢复后对 pb 日志 `bfe-pblog-tool` 导出比对缺口，停插件后 `-b` 补读重放；
+5. 表不存在错误：部署流程漏执行 ai-gateway-api 仓库的 `db_ddl_report_mysql.sql`。
 
 ## 与 mod_kafka 的关系
 

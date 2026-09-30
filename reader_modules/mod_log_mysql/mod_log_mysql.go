@@ -15,7 +15,6 @@
 package mod_log_mysql
 
 import (
-	"database/sql"
 	"fmt"
 	"net/url"
 
@@ -38,11 +37,18 @@ var COUNTER_KEYS = []string{
 	"SENT_MYSQL_CHN_FULL", // 队列满丢弃条数（背压）
 	"SEND_MYSQL_FAILED",   // 重试耗尽丢弃批数
 	"WRITE_BATCH_SIZE",    // 每批实际条数累计（diff 求均值观测批大小）
+	"MYSQL_CONN_RETRY",    // 建连重试累计次数（重试协程每次失败 +1）
+	"MYSQL_CONN_OK",       // 建连成功累计次数
 }
+
+// state 键值（非 counter）：MYSQL_CONN_STATE = UP / DOWN，
+// 与 bfe_reader 的 SERVER_READY 同为 state.Set 用法，web monitor 自动带出
 
 // recordWriter is a small interface to make ModuleLogMysql testable
 type recordWriter interface {
 	Enqueue(row []interface{}) bool
+	Connect() error
+	Connected() bool
 	Start()
 	Close()
 }
@@ -111,24 +117,17 @@ func (m *ModuleLogMysql) Init(conf *reader_conf.ReaderConfig, whs *web_monitor.W
 		return fmt.Errorf("LoadConfig(): %v", err)
 	}
 
-	// connect to mysql and verify connectivity (fail-fast)
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4",
-		m.conf.Mysql.User, m.conf.Mysql.Password, m.conf.Mysql.Addr, m.conf.Mysql.DBName)
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		log.Logger.Error("%s.Init(): sql.Open(): %v", m.name, err)
-		return fmt.Errorf("sql.Open(): %v", err)
-	}
-	if err = db.Ping(); err != nil {
-		db.Close()
-		log.Logger.Error("%s.Init(): db.Ping(): %v", m.name, err)
-		return fmt.Errorf("db.Ping(): %v", err)
-	}
-	db.SetMaxOpenConns(m.conf.Writer.MaxOpenConns)
-	db.SetMaxIdleConns(m.conf.Writer.MaxIdleConns)
-
+	// connect to mysql and verify connectivity.
+	// 连通性错误非致命：Init 只记日志并置 MYSQL_CONN_STATE=DOWN，
+	// 由 writer 的后台重试协程持续重连直到成功；配置错误仍在上方 fail-fast
 	m.mapper = NewFieldMapper()
-	m.writer = NewRecordWriter(db, m.conf, &m.state)
+	m.writer = NewRecordWriter(m.conf, &m.state)
+	if err := m.writer.Connect(); err != nil {
+		log.Logger.Error("%s.Init(): mysql not reachable (%v), will retry in background", m.name, err)
+		m.state.Set("MYSQL_CONN_STATE", "DOWN")
+	} else {
+		m.state.Set("MYSQL_CONN_STATE", "UP")
+	}
 	m.writer.Start()
 
 	err = web_monitor.RegisterHandlers(whs, web_monitor.WebHandleMonitor, m.monitorHandlers())

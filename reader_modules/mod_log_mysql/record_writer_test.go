@@ -15,9 +15,11 @@
 package mod_log_mysql
 
 import (
+	"database/sql"
 	"errors"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,10 +30,12 @@ import (
 func newTestConf() *ConfModLogMysql {
 	return &ConfModLogMysql{
 		Mysql: ConfMysql{
-			Addr:   "127.0.0.1:3306",
-			User:   "report",
-			DBName: "bfe_report",
-			Table:  "test_table",
+			Addr:                   "127.0.0.1:3306",
+			User:                   "report",
+			DBName:                 "bfe_report",
+			Table:                  "test_table",
+			ConnectTimeoutMs:       3000,
+			ConnectRetryIntervalMs: 50, // fast retry in tests
 		},
 		Writer: ConfLogMysqlWriter{
 			QueueSize:       16,
@@ -51,14 +55,27 @@ func newTestState() *module_state2.State {
 	return state
 }
 
-func newTestWriter(t *testing.T) (*RecordWriter, sqlmock.Sqlmock, *module_state2.State) {
+// newTestWriterWithConf creates a writer wired to a sqlmock db: the connector
+// seam is replaced so Connect() returns the mock db directly (ping assumed).
+// Connect() is already called; the writer is not started.
+func newTestWriterWithConf(t *testing.T, conf *ConfModLogMysql) (*RecordWriter, sqlmock.Sqlmock, *module_state2.State) {
 	t.Helper()
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock.New failed: %v", err)
 	}
 	state := newTestState()
-	return NewRecordWriter(db, newTestConf(), state), mock, state
+	w := NewRecordWriter(conf, state)
+	w.connect = func(*ConfModLogMysql) (*sql.DB, error) { return db, nil }
+	if err := w.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	return w, mock, state
+}
+
+func newTestWriter(t *testing.T) (*RecordWriter, sqlmock.Sqlmock, *module_state2.State) {
+	t.Helper()
+	return newTestWriterWithConf(t, newTestConf())
 }
 
 // makeRow returns a row with one value per column.
@@ -121,16 +138,10 @@ func TestRecordWriter_BatchByCount(t *testing.T) {
 }
 
 func TestRecordWriter_BatchByTimeout(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("sqlmock.New failed: %v", err)
-	}
-	state := newTestState()
-
 	conf := newTestConf()
 	conf.Writer.BatchSize = 100
 	conf.Writer.FlushIntervalMs = 50
-	w := NewRecordWriter(db, conf, state)
+	w, mock, state := newTestWriterWithConf(t, conf)
 
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta(expectedInsertSQL("test_table", ddlColumns, 1))).
@@ -152,15 +163,9 @@ func TestRecordWriter_BatchByTimeout(t *testing.T) {
 }
 
 func TestRecordWriter_SQLShape(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("sqlmock.New failed: %v", err)
-	}
-	state := newTestState()
-
 	conf := newTestConf()
 	conf.Writer.BatchSize = 2
-	w := NewRecordWriter(db, conf, state)
+	w, mock, state := newTestWriterWithConf(t, conf)
 
 	// exact statement: placeholder count == 2 * 89, ON DUPLICATE KEY UPDATE covers all columns
 	stmt := w.buildStmt(2)
@@ -189,15 +194,9 @@ func TestRecordWriter_SQLShape(t *testing.T) {
 }
 
 func TestRecordWriter_RetryThenSuccess(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("sqlmock.New failed: %v", err)
-	}
-	state := newTestState()
-
 	conf := newTestConf()
 	conf.Writer.BatchSize = 1 // flush on every enqueue
-	w := NewRecordWriter(db, conf, state)
+	w, mock, state := newTestWriterWithConf(t, conf)
 
 	// first attempt fails, retry (after 200ms backoff) succeeds
 	mock.ExpectBegin()
@@ -222,16 +221,10 @@ func TestRecordWriter_RetryThenSuccess(t *testing.T) {
 }
 
 func TestRecordWriter_RetryExhausted(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("sqlmock.New failed: %v", err)
-	}
-	state := newTestState()
-
 	conf := newTestConf()
 	conf.Writer.BatchSize = 1
 	conf.Writer.MaxRetries = 2 // initial attempt + 2 retries (200ms + 400ms backoff)
-	w := NewRecordWriter(db, conf, state)
+	w, mock, state := newTestWriterWithConf(t, conf)
 
 	for i := 0; i < 3; i++ {
 		mock.ExpectBegin()
@@ -276,15 +269,9 @@ func TestRecordWriter_DrainOnClose(t *testing.T) {
 }
 
 func TestRecordWriter_EnqueueFull(t *testing.T) {
-	db, _, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("sqlmock.New failed: %v", err)
-	}
-	state := newTestState()
-
 	conf := newTestConf()
 	conf.Writer.QueueSize = 1
-	w := NewRecordWriter(db, conf, state) // not started: channel never drains
+	w := NewRecordWriter(conf, newTestState()) // not started: channel never drains
 
 	if !w.Enqueue(makeRow()) {
 		t.Error("first Enqueue should succeed")
@@ -293,4 +280,133 @@ func TestRecordWriter_EnqueueFull(t *testing.T) {
 		t.Error("second Enqueue should fail when channel full")
 	}
 	w.Close()
+}
+
+// TestRecordWriter_ConnectIdempotent: a second Connect on an already connected
+// writer must be a no-op (the connector is not invoked again).
+func TestRecordWriter_ConnectIdempotent(t *testing.T) {
+	var calls int32
+	w := NewRecordWriter(newTestConf(), newTestState())
+	// fail twice, then swap in a fake db
+	w.connect = func(*ConfModLogMysql) (*sql.DB, error) {
+		if atomic.AddInt32(&calls, 1) <= 2 {
+			return nil, errors.New("mysql down")
+		}
+		db, _, err := sqlmock.New()
+		return db, err
+	}
+	if err := w.Connect(); err == nil {
+		t.Fatal("first Connect should fail")
+	}
+	if err := w.Connect(); err == nil {
+		t.Fatal("second Connect should fail")
+	}
+	if err := w.Connect(); err != nil {
+		t.Fatalf("third Connect should succeed: %v", err)
+	}
+	if !w.Connected() {
+		t.Fatal("Connected() should be true")
+	}
+	if err := w.Connect(); err != nil {
+		t.Fatalf("Connect on connected writer should be no-op: %v", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 3 {
+		t.Errorf("connector called %d times, want 3 (no-op on connected)", got)
+	}
+}
+
+// TestRecordWriter_BufferThenConnectDrain: while mysql is unreachable the
+// writeLoop must not consume the queue (rows accumulate in ch); after the
+// retry loop connects, the backlog drains in batches as before.
+func TestRecordWriter_BufferThenConnectDrain(t *testing.T) {
+	conf := newTestConf()
+	conf.Writer.FlushIntervalMs = 50 // ticker-based flush after connect
+
+	var failing atomic.Bool
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+	state := newTestState()
+	w := NewRecordWriter(conf, state)
+	w.connect = func(*ConfModLogMysql) (*sql.DB, error) {
+		if failing.Load() {
+			return nil, errors.New("mysql down")
+		}
+		return db, nil
+	}
+
+	failing.Store(true)
+	if err := w.Connect(); err == nil {
+		t.Fatal("initial Connect should fail while failing is set")
+	}
+	w.Start() // writeLoop parks on connCh; connectLoop retries every 50ms
+
+	// rows enqueue into the buffered queue while disconnected
+	for i := 0; i < 2; i++ {
+		if !w.Enqueue(makeRow()) {
+			t.Fatalf("Enqueue %d failed", i)
+		}
+	}
+
+	// retry loop is running; nothing is written yet
+	waitForCounter(t, state, "MYSQL_CONN_RETRY", 2, 5*time.Second)
+	if got := state.GetCounter("WRITE_BATCH_SIZE"); got != 0 {
+		t.Fatalf("WRITE_BATCH_SIZE = %d, want 0 while disconnected", got)
+	}
+
+	// expect a single 2-row batch for the buffered backlog
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(expectedInsertSQL("test_table", ddlColumns, 2))).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectCommit()
+
+	failing.Store(false)
+	waitForCounter(t, state, "MYSQL_CONN_OK", 1, 5*time.Second)
+	if !w.Connected() {
+		t.Fatal("Connected() should be true after retry")
+	}
+	if got := state.GetState("MYSQL_CONN_STATE"); got != "UP" {
+		t.Errorf("MYSQL_CONN_STATE = %q, want UP", got)
+	}
+
+	waitForCounter(t, state, "WRITE_BATCH_SIZE", 2, 5*time.Second)
+	w.Close()
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestRecordWriter_CloseBeforeConnected: Close while the retry loop is still
+// running must shut down both goroutines promptly and drop buffered rows.
+func TestRecordWriter_CloseBeforeConnected(t *testing.T) {
+	conf := newTestConf()
+	state := newTestState()
+	w := NewRecordWriter(conf, state)
+	w.connect = func(*ConfModLogMysql) (*sql.DB, error) {
+		return nil, errors.New("mysql down")
+	}
+
+	w.Start()
+	w.Enqueue(makeRow())
+	w.Enqueue(makeRow())
+
+	done := make(chan struct{})
+	go func() {
+		w.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close blocked with unconnected writer")
+	}
+
+	if got := state.GetCounter("WRITE_BATCH_SIZE"); got != 0 {
+		t.Errorf("WRITE_BATCH_SIZE = %d, want 0 (buffered rows dropped)", got)
+	}
+	if got := state.GetCounter("MYSQL_CONN_OK"); got != 0 {
+		t.Errorf("MYSQL_CONN_OK = %d, want 0", got)
+	}
 }
