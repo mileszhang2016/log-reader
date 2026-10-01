@@ -118,8 +118,54 @@ func float64Ptr(v float64) *float64 {
 
 func TestFieldRegistry_DefaultFieldsCount(t *testing.T) {
 	def := DefaultFields()
-	if len(def) != 74 {
-		t.Fatalf("expected 74 default fields, got %d: %v", len(def), def)
+	if len(def) != 92 {
+		t.Fatalf("expected 92 default fields, got %d: %v", len(def), def)
+	}
+}
+
+// TestFieldRegistry_DefaultFieldsAlignedWithMysqlWriter pins the alignment
+// contract: the mod_kafka default output set covers every direct field the
+// mod_log_mysql writer persists (see modifications/2026-10-01-align-mod-kafka-
+// output-with-mod-log-mysql). Derived columns (log_time, level1Name~level5)
+// are produced from timestamp / ai_apikeytags and are not separate fields.
+func TestFieldRegistry_DefaultFieldsAlignedWithMysqlWriter(t *testing.T) {
+	mysqlWriterFields := []string{
+		"hostid", "ai_apikey_id", "ai_requested_model", "logid", "product", "log_tag",
+		"client_ip", "client_network", "is_trust_src_ip", "req_num", "session_id",
+		"bfe_ip", "sock_src_ip", "vip", "vip6",
+		"err_code", "err_msg",
+		"proto", "header_host", "origin_uri", "final_uri", "method", "content_type",
+		"x_forward_for", "accept_language", "authorization", "transfer_encoding",
+		"referrer", "user_agent", "delegation", "uid", "cookie", "req_headers",
+		"req_header_len", "req_body_len",
+		"cluster", "sub_cluster", "backend_info", "backend_retry",
+		"res_status_code", "res_header_len", "res_body_len", "res_content_type",
+		"res_location", "res_transfer_encoding", "res_headers",
+		"all_time", "read_client_time", "cluster_serve_time", "backend_serve_time",
+		"write_client_time", "connect_backend_time", "proxy_delay_time", "session_offset_time",
+		"ai_target_model", "ai_stream", "ai_input_tokens", "ai_output_tokens", "ai_total_tokens",
+		"ai_cache_read_tokens", "ai_cache_write_tokens", "ai_audio_input_tokens",
+		"ai_audio_output_tokens", "ai_image_count", "ai_ttft_us", "ai_tpot_us",
+		"ai_provider", "ai_protocol", "ai_mode", "ai_retry_count", "ai_cost_value", "ai_cost_currency",
+		"ai_route_rule_hits", "ai_cluster_key_names", "ai_rate_limit_hits",
+		"ai_auth_reject_reason", "ai_auth_reject_quota_plans", "ai_auth_hit_quota_plans",
+		"ai_cache_status", "mirror_hit", "mirror_cluster",
+		"ai_intent_question", "ai_intent_answer", "ai_intent_confidence", "ai_intent_source",
+		"ai_intent_latency_us", "ai_intent_cache_hit", "ai_intent_questions_version",
+		"timestamp", "ai_apikeytags",
+	}
+	def := map[string]bool{}
+	for _, name := range DefaultFields() {
+		def[name] = true
+	}
+	req := map[string]bool{}
+	for _, name := range RequiredFields() {
+		req[name] = true
+	}
+	for _, name := range mysqlWriterFields {
+		if !def[name] && !req[name] {
+			t.Errorf("field %s is written by mod_log_mysql but not in the mod_kafka default/required output set", name)
+		}
 	}
 }
 
@@ -340,12 +386,23 @@ func TestFieldRegistry_ExtractCacheMirrorIntentFields(t *testing.T) {
 		})
 	}
 
-	// Unset fields extract as zero values.
+	// Unset optional fields extract as nil (JSON null), matching the
+	// mod_log_mysql kindOptionalNum NULL=unset caliber
+	// (modifications/2026-10-01-align-mod-kafka-output-with-mod-log-mysql).
 	log.RequestLog.AiIntentConfidence = nil
+	log.RequestLog.AiIntentLatencyUs = nil
+	log.RequestLog.AiIntentCacheHit = nil
 	log.RequestLog.MirrorHit = nil
-	if _, isZero := Extract("ai_intent_confidence", log); !isZero {
-		t.Error("ai_intent_confidence should be zero when unset")
+	for _, name := range []string{"ai_intent_confidence", "ai_intent_latency_us", "ai_intent_cache_hit"} {
+		val, isZero := Extract(name, log)
+		if val != nil {
+			t.Errorf("%s should extract as nil when unset, got %v", name, val)
+		}
+		if !isZero {
+			t.Errorf("%s should be flagged zero when unset", name)
+		}
 	}
+	// Non-optional fields keep the historical zero-value caliber.
 	if _, isZero := Extract("mirror_hit", log); !isZero {
 		t.Error("mirror_hit should be zero when unset")
 	}
