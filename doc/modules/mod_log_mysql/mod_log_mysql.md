@@ -121,3 +121,9 @@ Modules = mod_log_mysql
 ## 与 mod_kafka 的关系
 
 两个模块共用 `reader_modules/mod_fields` 的字段抽取与类型转换逻辑（IP 转点分、`backend_info` 拼 `IP:Port`、apikeytags 打平、hostid 注入等）：mod_kafka 在其上做 `json.Marshal`，mod_log_mysql 在其上做行数组组装（其中三个可空意图数值列按 proto optional 指针判空直接取 RequestLog 字段）。`FieldMode/FieldNames` 字段裁剪配置仅属于 mod_kafka；mod_log_mysql 始终写全量 99 列。
+
+**对齐性约定**（2026-10-01 起，见 `doc/modifications/2026-10-01-align-mod-kafka-output-with-mod-log-mysql/`）：
+
+- mod_kafka 的 Default 输出字段集（`FieldMode=default`）= mod_log_mysql 的写入字段集（88 个直接字段 + `timestamp`/`ai_apikeytags` 两个派生源；`log_time`、`level1Name~level5` 为两侧各自派生，不单独输出）；
+- `ai_intent_confidence` / `ai_intent_latency_us` / `ai_intent_cache_hit` 三个 proto optional 列：未设置时两侧均为空值（MySQL NULL / Kafka JSON `null`），可区分"未求值"与"显式置零"；
+- 新增报表字段必须两侧同 PR 落地（注册表 Default + `columnDefs` 列 + 消费侧 DDL），并以 `field_registry_test.go` 的 `TestFieldRegistry_DefaultFieldsAlignedWithMysqlWriter` 锁定对齐关系。
