@@ -1079,6 +1079,29 @@ func registerAllFields() {
 		},
 		isZeroString,
 	)
+	// 缺价信号（issue #1479，bfe-access-pb v0.3.17 字段 763/766）：Default=true
+	// 使其进入 Kafka 默认输出（DefaultFields 过滤 Default 成员），与 ai_cache/
+	// ai_intent 同族。两字段均为 proto optional：未设置输出 null（= 未发生缺价），
+	// 与 mod_log_mysql 写 NULL 的口径一致，不能折叠为 false/""。
+	// ai_price_miss 在非 2xx 的 reject 行也会出现（bfe 写出时机为请求级）。
+	registerField("ai_price_miss", "bool", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil && reqLog.AiPriceMiss != nil {
+				return *reqLog.AiPriceMiss
+			}
+			return nil
+		},
+		isZeroBool,
+	)
+	registerField("ai_price_warn", "string", false, true,
+		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
+			if reqLog := bfeLog.GetRequestLog(); reqLog != nil && reqLog.AiPriceWarn != nil {
+				return *reqLog.AiPriceWarn
+			}
+			return nil
+		},
+		isZeroString,
+	)
 	registerField("mirror_hit", "bool", false, true,
 		func(bfeLog *bfe_access_pb.BfeLog) interface{} {
 			if reqLog := bfeLog.GetRequestLog(); reqLog != nil {

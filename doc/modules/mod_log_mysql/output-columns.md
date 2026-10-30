@@ -2,7 +2,7 @@
 
 ## 1. 概述
 
-本文档列出 `mod_log_mysql` 写入 MySQL 明细表 `bfe_ai_request_log` 的全部 99 个列：
+本文档列出 `mod_log_mysql` 写入 MySQL 明细表 `bfe_ai_request_log` 的全部 101 个列：
 
 - **列名 / MySQL 类型**：与 Doris 明细表 `bfe_ai_request_log` 同名同列（`ARRAY<STRUCT>` 列在本表为 `JSON`）；
 - **来源**：绝大多数列与 `mod_fields` 抽取字段（即 mod_kafka JSON 输出字段）**同名直通**；特殊列（`log_time`、level 打平列）在表中单独标注；
@@ -16,6 +16,7 @@
 |------|------|
 | 字符串零值 | 可空列：空串 `""` 写入 `NULL`（下游聚合侧 `IFNULL/COALESCE` 归一，与 Doris 聚合 JOB 的 COALESCE 口径一致）；NOT NULL 字符串列（AI 缓存/镜像/意图段的 `ai_cache_status`/`mirror_cluster`/`ai_intent_*` 字符串列）：空串原样写入 `''`（写 NULL 会触发 Error 1048） |
 | 数值/布尔零值 | 原样写入（`0` 即 `0`，如 `ai_stream=0`、`ai_retry_count=0`）；例外：`ai_intent_confidence`/`ai_intent_latency_us`/`ai_intent_cache_hit` 三个可空意图数值列为 proto optional，**未设置（指针 nil）→ NULL（=未求值，与 report 查询契约一致），显式置 0 → 0** |
+| 缺价信号零值 | `ai_price_miss`（TINYINT）/`ai_price_warn`（VARCHAR(32)）为可空列，按 proto 指针判存在：**未设置 → NULL（=本次请求未发生缺价回退，Spark/报表侧不会误判为"0=已回退"）**；`ai_price_miss` 显式 `false` 写 `0`、`true` 写 `1`；`ai_price_warn` 非空取值原样写入 |
 | JSON 列 | 抽取值为结构化值，`json.Marshal` 后写入；nil/空数组 → `NULL` |
 | 日志类型 | 仅写入 `BfeLogType_Request`；会话日志不写入本表 |
 | 幂等 | 唯一键 `(hostid, log_time, ai_apikey_id, ai_requested_model, logid)` 冲突覆盖（`ON DUPLICATE KEY UPDATE`）；`logid` 是请求级判别列（issue #1417），只有**同一请求重放**（同 `logid`）才折叠，故重复写入/补读重放安全 |
@@ -179,6 +180,17 @@ proto v0.3.7/3.8/3.9 字段；列序与 ai-gateway-api 权威 DDL 明细表一�
 
 三个可空数值列的 NULL/0 语义：mapper `kindOptionalNum` 按 proto optional 指针判空——指针 nil（未设置）写 NULL，指针非 nil（含显式置 0）写实际值，与 ai-gateway-api report 查询契约（null=未求值）对齐。
 
+### 3.12. 缺价信号列（2 列，2026-10-30 加列）
+
+pb 字段 763/766（bfe-access-pb v0.3.17，对应 bfenetworks/bfe#1479 与 #1408）：当模型/接口的价格表缺少条目、BFE 走了"语义回退 / 零计费 / 拒绝"时，把"少收/未收"的事实落到明细行上，报表侧据此对账。列序与 ai-gateway-api 权威 DDL 明细表一致，追加在 `ai_intent_questions_version` 之后。
+
+| 列名 | 类型 | 说明 |
+|------|------|------|
+| `ai_price_miss` | TINYINT | 本次请求是否发生缺价回退（计价缺失导致费用不能按原接口定价核算）：`1`=发生（回退/零计费），`0`=显式未发生，**NULL=未设置（旧版 bfe 或未启用）**。注意 `reject` 形态下请求在转发前被拒（2xx 之外），该行**同样会带** `ai_price_miss=1`，故按 `ai_price_miss=1` 统计"少收行数"时需结合 `res_status_code` 或 `ai_price_warn` 排除 `reject` |
+| `ai_price_warn` | VARCHAR(32) | 缺价形态（六取值，bfe 侧取"最具体"的一个）：`fallback`（非 chat 接口按该模型 chat 价计）、`subitem_missing`（计价条目缺子项价键，缺失子项按 0）、`no_entry`（该 (模型, 接口) 条目缺失，按集群 `PriceMissAction` 处理）、`no_baseline`（条目缺失且无 chat 价可回退）、`no_model_table`（集群 `ModelTable` 整体缺失）、`reject`（接口未定价且 `PriceMissAction=reject`，请求被拒 503）；**NULL=未设置**（未发生缺价） |
+
+两列的 NULL 语义与三个可空意图数值列同款（mapper `kindOptionalBoolTiny` / `kindOptionalStr` 按 proto 指针判存在）：**NULL 表示"未发生/未知"，不能折叠为 0/空串**，否则报表会把全量历史行误判成缺价行。`ai_price_miss` 的显式 `false`（pb 侧 parses 为 `false` 且字段存在）写 `0`，与 NULL 可区分。
+
 ## 4. 特殊列说明
 
 ### 4.1. 幂等键（含请求级判别列 `logid`）
@@ -218,7 +230,7 @@ KEY idx_status_time (res_status_code, log_time)
 
 | 项 | Doris `bfe_ai_request_log` | MySQL `bfe_ai_request_log`（本表） |
 |----|---------------------------|------------------------------------|
-| 列名/列数 | 99 列 | 同名同列，99 列 |
+| 列名/列数 | 99 列 | 同名同列，101 列（多 `ai_price_miss`/`ai_price_warn`，Doris 侧待加列） |
 | 复合列类型 | `ARRAY<STRUCT<...>>` / `ARRAY<VARCHAR>` | `JSON` |
 | 标签打平 | Routine Load `json_extract` 表达式 | 插件写时打平 |
 | log_time 生成 | Routine Load `FROM_UNIXTIME(timestamp)` | 插件写时转换 |
@@ -241,4 +253,5 @@ KEY idx_status_time (res_status_code, log_time)
 | AI 可观测（标量） | 19 |
 | AI 可观测（JSON） | 5 |
 | AI 缓存/镜像/意图 | 10 |
-| **总计** | **99** |
+| 缺价信号 | 2 |
+| **总计** | **101** |

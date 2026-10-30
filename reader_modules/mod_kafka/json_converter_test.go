@@ -83,18 +83,18 @@ func makeBfeLog() *bfe_access_pb.BfeLog {
 				{Tagname: strPtr("dep"), Tagvalue: strPtr("ops"), Taglevel: int32Ptr(1)},
 				{Tagname: strPtr("team"), Tagvalue: strPtr("bfe"), Taglevel: int32Ptr(2)},
 			},
-			AiRequestedModel:   strPtr("test-model"),
-			AiTargetModel:      strPtr("gpt-5"),
-			AiStream:           boolPtr(false),
-			AiInputTokens:      int64Ptr(34),
-			AiOutputTokens:     int64Ptr(182),
-			AiTotalTokens:      int64Ptr(216),
-			AiTtftUs:           int64Ptr(5486),
-			AiTpotUs:           int64Ptr(3),
-			AiProvider:         strPtr("openai"),
-			AiRetryCount:       uint32Ptr(1),
-			AiCostValue:        int64Ptr(5000),
-			AiCostCurrency:     strPtr("USD"),
+			AiRequestedModel: strPtr("test-model"),
+			AiTargetModel:    strPtr("gpt-5"),
+			AiStream:         boolPtr(false),
+			AiInputTokens:    int64Ptr(34),
+			AiOutputTokens:   int64Ptr(182),
+			AiTotalTokens:    int64Ptr(216),
+			AiTtftUs:         int64Ptr(5486),
+			AiTpotUs:         int64Ptr(3),
+			AiProvider:       strPtr("openai"),
+			AiRetryCount:     uint32Ptr(1),
+			AiCostValue:      int64Ptr(5000),
+			AiCostCurrency:   strPtr("USD"),
 			AiRouteRuleHits: []*bfe_access_pb.AIRouteRuleHit{
 				{
 					RuleOwner:     strPtr("ak_user_a"),
@@ -119,6 +119,56 @@ func uint64Ptr(v uint64) *uint64 { return &v }
 func int64Ptr(v int64) *int64    { return &v }
 func int32Ptr(v int32) *int32    { return &v }
 func boolPtr(v bool) *bool       { return &v }
+
+// TestConvertBfeLogToJSON_PriceMissFields 验证缺价字段（issue #1479）进入
+// Kafka 默认输出：default=true 注册后 DefaultOutputFields() 必须包含两键。
+func TestConvertBfeLogToJSON_PriceMissFields(t *testing.T) {
+	log := makeBfeLog()
+	log.RequestLog.AiPriceMiss = boolPtr(true)
+	log.RequestLog.AiPriceWarn = strPtr("reject")
+
+	jsonBytes, err := ConvertBfeLogToJSON(log, DefaultOutputFields())
+	if err != nil {
+		t.Fatalf("ConvertBfeLogToJSON failed: %v", err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(jsonBytes, &result); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+	if result["ai_price_miss"] != true {
+		t.Errorf("ai_price_miss = %v, want true", result["ai_price_miss"])
+	}
+	if result["ai_price_warn"] != "reject" {
+		t.Errorf("ai_price_warn = %v, want reject", result["ai_price_warn"])
+	}
+}
+
+// TestConvertBfeLogToJSON_PriceMissFieldsUnset 验证两字段未设置（proto optional
+// 指针 nil）时输出 JSON null，与 mod_log_mysql 写 NULL 的口径一致——不能折叠为
+// false/""（否则报表侧无法区分"未发生缺价"与"缺价且形态未知"）。
+func TestConvertBfeLogToJSON_PriceMissFieldsUnset(t *testing.T) {
+	log := makeBfeLog()
+	log.RequestLog.AiPriceMiss = nil
+	log.RequestLog.AiPriceWarn = nil
+
+	jsonBytes, err := ConvertBfeLogToJSON(log, DefaultOutputFields())
+	if err != nil {
+		t.Fatalf("ConvertBfeLogToJSON failed: %v", err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(jsonBytes, &result); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+	for _, name := range []string{"ai_price_miss", "ai_price_warn"} {
+		v, ok := result[name]
+		if !ok {
+			t.Fatalf("%s should be present in default output", name)
+		}
+		if v != nil {
+			t.Errorf("%s = %v, want null when unset", name, v)
+		}
+	}
+}
 
 func TestConvertBfeLogToJSON_DefaultFields(t *testing.T) {
 	log := makeBfeLog()

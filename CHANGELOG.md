@@ -10,6 +10,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `bfe-access-pb` upgraded from `v0.3.9` to `v0.3.17` to pick up the missing-price fields (`ai_price_miss` field 763, `ai_price_warn` field 766).
+- `mod_log_mysql` column set grows from 99 to 101 to match `db_ddl_report_mysql.sql` (new columns appended after `ai_intent_questions_version`): `ai_price_miss TINYINT DEFAULT NULL` and `ai_price_warn VARCHAR(32) DEFAULT NULL`. Both are written as `NULL` when unset (the request was not billed through a missing price), so reports do not mistake "not applicable" for "billed wrong"; an explicit `ai_price_miss=false` still writes `0`.
+- The Kafka default field set grows from 92 to 94: `ai_price_miss` (bool) and `ai_price_warn` (string) reach the default output, emitting JSON `null` when unset (matching the MySQL `NULL`).
+
+### Added
+- New columns and output fields expose how a request was billed when its interface had no price entry (bfenetworks/bfe#1479): `ai_price_miss` marks the request as billed through a fallback / billed as zero / refused for a missing price, and `ai_price_warn` carries the shape (`fallback`, `subitem_missing`, `no_entry`, `no_baseline`, `no_model_table`, `reject`, most specific one wins). `ai_price_miss` is also present on non-2xx rows refused for a missing price.
+- Integration test TC-08 (`TestLR03_PriceMissColumns`) covers both columns end to end: fallback and reject shapes land on the row, unset stays `NULL`, explicit `false` stays `0`.
+
 ## [v1.5.0] - 2026-10-24
 
 ### Changed

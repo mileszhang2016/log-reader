@@ -1,8 +1,9 @@
 -- ============================================================================
 -- bfe_ai_request_log 建表语句（LR03 集成测试内嵌副本）
 --
--- 权威 DDL 归 ai-gateway-api 仓库 db_ddl_report_mysql.sql 明细表（2026-09-27
--- 99 列版，含 ai-cache/流量镜像/ai-intent 10 新列；2026-10-13 起基准另含
+-- 权威 DDL 归 ai-gateway-api 仓库 db_ddl_report_mysql.sql 明细表（2026-10-30
+-- 101 列版，基准提交 508e552：含 ai-cache/流量镜像/ai-intent 10 列与缺价信号
+-- ai_price_miss/ai_price_warn 2 列；2026-10-13 起基准另含
 -- bfenetworks/bfe#1417：uk_dedup 为五列、logid 收紧为 NOT NULL DEFAULT 0），
 -- 本副本以其为基准重新生成，权威 DDL 后续变更时应同步重新生成。
 -- 列清单/列序/类型与权威 DDL 明细表保持一致，并有三处测试化调整（权威 DDL
@@ -132,6 +133,10 @@ CREATE TABLE IF NOT EXISTS bfe_ai_request_log (
     ai_intent_latency_us    BIGINT        DEFAULT NULL,
     ai_intent_cache_hit     TINYINT       DEFAULT NULL,
     ai_intent_questions_version VARCHAR(32) NOT NULL DEFAULT '',
+    -- 缺价信号（2026-10-30 加列，bfenetworks/bfe#1479，bfe-access-pb v0.3.17 字段
+    -- 763/766；NULL = 未发生缺价，与 ai_price_miss=false（显式未发生）可区分）
+    ai_price_miss           TINYINT       DEFAULT NULL,
+    ai_price_warn           VARCHAR(32)   DEFAULT NULL,
     -- 幂等键：含请求级判别列 logid（bfenetworks/bfe#1417）——同秒同 Key 同模型的
     -- 并发请求各自成行；只有同一请求重放（同 logid）才命中覆盖（重发/-b 补读仍安全）
     UNIQUE KEY uk_dedup (hostid, log_time, ai_apikey_id, ai_requested_model, logid),

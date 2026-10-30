@@ -27,17 +27,19 @@ import (
 type columnKind int
 
 const (
-	kindScalar     columnKind = iota // mod_fields 抽取直通；字符串零值 -> NULL
-	kindNotNullStr                   // NOT NULL 字符串列直通；空串原样写入 ""（不映射 NULL）
-	kindBoolTiny                     // 布尔抽取值 -> TINYINT（false->0, true->1）
-	kindOptionalNum                  // proto optional 数值列：指针 nil -> NULL（未设置），非 nil -> 实际值
-	kindJSON                         // 结构化抽取值 json.Marshal 后写入；空 -> NULL
-	kindLogTime                      // timestamp（Unix 秒）-> time.Time（本地时区）
-	kindTagName                      // ai_apikeytags 打平：标签名
-	kindTagValue                     // ai_apikeytags 打平：标签值
+	kindScalar           columnKind = iota // mod_fields 抽取直通；字符串零值 -> NULL
+	kindNotNullStr                         // NOT NULL 字符串列直通；空串原样写入 ""（不映射 NULL）
+	kindBoolTiny                           // 布尔抽取值 -> TINYINT（false->0, true->1）
+	kindOptionalNum                        // proto optional 数值列：指针 nil -> NULL（未设置），非 nil -> 实际值
+	kindOptionalBoolTiny                   // proto optional bool 列：指针 nil -> NULL（未设置），非 nil -> 1/0（issue #1479）
+	kindOptionalStr                        // proto optional string 列：指针 nil -> NULL（未设置），非 nil -> 值（不做空串->NULL，issue #1479）
+	kindJSON                               // 结构化抽取值 json.Marshal 后写入；空 -> NULL
+	kindLogTime                            // timestamp（Unix 秒）-> time.Time（本地时区）
+	kindTagName                            // ai_apikeytags 打平：标签名
+	kindTagValue                           // ai_apikeytags 打平：标签值
 )
 
-// columnDef 单列定义。本表是写入侧 99 列清单与列序的唯一权威，
+// columnDef 单列定义。本表是写入侧 101 列清单与列序的唯一权威，
 // 列序与 ai-gateway-api 仓库 db_ddl_report_mysql.sql 的 CREATE TABLE 列序一致。
 type columnDef struct {
 	name  string // 表列名
@@ -170,6 +172,11 @@ var columnDefs = []columnDef{
 	{name: "ai_intent_latency_us", field: "ai_intent_latency_us", kind: kindOptionalNum},
 	{name: "ai_intent_cache_hit", field: "ai_intent_cache_hit", kind: kindOptionalNum},
 	{name: "ai_intent_questions_version", field: "ai_intent_questions_version", kind: kindNotNullStr},
+	// === 缺价信号列（2026-10-30 加列，issue #1479，bfe-access-pb v0.3.17 字段 763/766） ===
+	// 列序与 ai-gateway-api db_ddl_report_mysql.sql 明细表新列顺序逐字一致；
+	// NULL = 未发生缺价；ai_price_miss 在非 2xx 的 reject 行也会出现（bfe 写出时机为请求级）。
+	{name: "ai_price_miss", field: "ai_price_miss", kind: kindOptionalBoolTiny},
+	{name: "ai_price_warn", field: "ai_price_warn", kind: kindOptionalStr},
 }
 
 // FieldMapper 将 BfeLog 组装为固定列序的数据行
@@ -294,7 +301,42 @@ func flattenTag(tags map[string]interface{}, level int) (name interface{}, value
 	return name, value
 }
 
-// ToRow 将 BfeLog 组装为一行数据（固定 99 列列序）。
+// extractOptionalBool returns the optional bool column value and whether it is
+// set: nil pointer -> NULL (not set), otherwise true/false (issue #1479).
+func extractOptionalBool(col columnDef, log *bfe_access_pb.BfeLog) (interface{}, bool) {
+	reqLog := log.GetRequestLog()
+	if reqLog == nil {
+		return nil, false
+	}
+	switch col.field {
+	case "ai_price_miss":
+		if reqLog.AiPriceMiss == nil {
+			return nil, false
+		}
+		return *reqLog.AiPriceMiss, true
+	}
+	return nil, false
+}
+
+// extractOptionalStr returns the optional string column value and whether it is
+// set: nil pointer -> NULL, otherwise the value (explicit "" is kept, unlike
+// kindNotNullStr's zero-value handling; issue #1479).
+func extractOptionalStr(col columnDef, log *bfe_access_pb.BfeLog) (interface{}, bool) {
+	reqLog := log.GetRequestLog()
+	if reqLog == nil {
+		return nil, false
+	}
+	switch col.field {
+	case "ai_price_warn":
+		if reqLog.AiPriceWarn == nil {
+			return nil, false
+		}
+		return *reqLog.AiPriceWarn, true
+	}
+	return nil, false
+}
+
+// ToRow 将 BfeLog 组装为一行数据（固定 101 列列序）。
 // 字符串零值 -> NULL（kindNotNullStr 列除外：空串原样写入，匹配 NOT NULL 列）；
 // 数值/布尔原样（布尔 TINYINT 列转 0/1；kindOptionalNum 列：proto 未设置 -> NULL）；
 // 声明了 max 的数值列超界 clamp 到列上限并触发 onNormalized 回调；
@@ -335,6 +377,22 @@ func (m *FieldMapper) ToRow(log *bfe_access_pb.BfeLog) ([]interface{}, error) {
 
 		case kindOptionalNum:
 			v, set := extractOptionalNum(col, log)
+			if !set {
+				row = append(row, nil)
+				continue
+			}
+			row = append(row, v)
+
+		case kindOptionalBoolTiny:
+			v, set := extractOptionalBool(col, log)
+			if !set {
+				row = append(row, nil)
+				continue
+			}
+			row = append(row, boolToTinyInt(v))
+
+		case kindOptionalStr:
+			v, set := extractOptionalStr(col, log)
 			if !set {
 				row = append(row, nil)
 				continue

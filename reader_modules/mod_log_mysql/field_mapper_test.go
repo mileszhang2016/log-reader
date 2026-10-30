@@ -21,7 +21,7 @@ import (
 	bfe_access_pb "github.com/bfenetworks/bfe-access-pb/bfe_access_pb"
 )
 
-// ddlColumns 是 ai-gateway-api 仓库 db_ddl_report_mysql.sql 明细表（99 列，变更
+// ddlColumns 是 ai-gateway-api 仓库 db_ddl_report_mysql.sql 明细表（101 列，变更
 // 文档 2026-09-27 评审基准）的列清单硬编码，用于校验 field_mapper 列数/列序与 DDL
 // 一致（快照式断言，防两侧漂移）。
 var ddlColumns = []string{
@@ -60,6 +60,8 @@ var ddlColumns = []string{
 	"ai_cache_status", "mirror_hit", "mirror_cluster",
 	"ai_intent_question", "ai_intent_answer", "ai_intent_confidence", "ai_intent_source",
 	"ai_intent_latency_us", "ai_intent_cache_hit", "ai_intent_questions_version",
+	// 缺价信号列（2026-10-30 加列，issue #1479，bfe-access-pb v0.3.17 字段 763/766）
+	"ai_price_miss", "ai_price_warn",
 }
 
 // makeBfeLog builds a BfeLog with full request fields for mapper tests.
@@ -183,8 +185,8 @@ func TestColumns_MatchDDL(t *testing.T) {
 			t.Fatalf("Columns()[%d] = %q, want %q (DDL order)", i, cols[i], want)
 		}
 	}
-	if len(cols) != 99 {
-		t.Fatalf("expected 99 columns, got %d", len(cols))
+	if len(cols) != 101 {
+		t.Fatalf("expected 101 columns, got %d", len(cols))
 	}
 }
 
@@ -194,8 +196,53 @@ func TestToRow_ColumnCountAndOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToRow failed: %v", err)
 	}
-	if len(row) != 99 {
-		t.Fatalf("row length = %d, want 99", len(row))
+	if len(row) != 101 {
+		t.Fatalf("row length = %d, want 101", len(row))
+	}
+}
+
+// TestToRow_PriceMissColumns 验证缺价两列（issue #1479）：未设置 -> NULL，
+// 设置 -> TINYINT 1/0 与字符串原值；不得复用 kindBoolTiny（会把 NULL 写成 0）
+// 或 kindNotNullStr（会把 NULL 写成 ""）。
+func TestToRow_PriceMissColumns(t *testing.T) {
+	mapper := NewFieldMapper()
+	idx := columnIndex(t)
+
+	// unset -> NULL
+	row, err := mapper.ToRow(makeBfeLog())
+	if err != nil {
+		t.Fatalf("ToRow failed: %v", err)
+	}
+	if v := row[idx["ai_price_miss"]]; v != nil {
+		t.Errorf("ai_price_miss = %v, want NULL when unset", v)
+	}
+	if v := row[idx["ai_price_warn"]]; v != nil {
+		t.Errorf("ai_price_warn = %v, want NULL when unset", v)
+	}
+
+	// set -> 1 / text
+	log := makeBfeLog()
+	log.RequestLog.AiPriceMiss = boolPtr(true)
+	log.RequestLog.AiPriceWarn = strPtr("subitem_missing")
+	row, err = mapper.ToRow(log)
+	if err != nil {
+		t.Fatalf("ToRow failed: %v", err)
+	}
+	if v := row[idx["ai_price_miss"]]; v != int64(1) {
+		t.Errorf("ai_price_miss = %v (%T), want int64(1)", v, v)
+	}
+	if v := row[idx["ai_price_warn"]]; v != "subitem_missing" {
+		t.Errorf("ai_price_warn = %v, want subitem_missing", v)
+	}
+
+	// explicit false is "set": TINYINT 0, not NULL
+	log.RequestLog.AiPriceMiss = boolPtr(false)
+	row, err = mapper.ToRow(log)
+	if err != nil {
+		t.Fatalf("ToRow failed: %v", err)
+	}
+	if v := row[idx["ai_price_miss"]]; v != int64(0) {
+		t.Errorf("ai_price_miss = %v (%T), want int64(0) for explicit false", v, v)
 	}
 }
 
@@ -381,8 +428,8 @@ func TestToRow_NilRequestLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToRow failed: %v", err)
 	}
-	if len(row) != 99 {
-		t.Fatalf("row length = %d, want 99", len(row))
+	if len(row) != 101 {
+		t.Fatalf("row length = %d, want 101", len(row))
 	}
 	idx := columnIndex(t)
 

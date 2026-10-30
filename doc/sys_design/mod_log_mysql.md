@@ -50,7 +50,7 @@ PbLogReader 批次分发
    └─► mod_log_mysql.Update(batch)
          ├─ 过滤：仅 BfeLogType_Request
          ├─ LOGID_EMPTY 计数（logid 为 0 的行，issue #1417）
-         ├─ mod_fields 抽取（与 mod_kafka 共用）→ field_mapper 组装行（99 列固定列序）
+         ├─ mod_fields 抽取（与 mod_kafka 共用）→ field_mapper 组装行（101 列固定列序）
          │    （字符串零值→NULL；apikeytags 打平；JSON 列 marshal）
          └─ RecordWriter.Enqueue(row)
                └─ recordCh（容量 QueueSize，非阻塞）
@@ -71,11 +71,11 @@ connSupervisor: DOWN 期按 ConnectRetryIntervalMs 重试 Connect；
 
 | 项 | 设计 |
 |----|------|
-| 语句 | 单事务多值 `INSERT INTO <table> (99 列) VALUES (...),(...) ON DUPLICATE KEY UPDATE col=VALUES(col), ...`（全列覆盖） |
+| 语句 | 单事务多值 `INSERT INTO <table> (101 列) VALUES (...),(...) ON DUPLICATE KEY UPDATE col=VALUES(col), ...`（全列覆盖） |
 | 幂等 | 唯一键含请求级判别列 `logid`：只有**同一请求重放**（同 `logid`）才命中覆盖 → 重发/重启/`-b` 补读均不产生重复行（issue #1417） |
 | 唯一键取舍 | 唯一键**必须含 `logid`**：四列键下 `log_time` 是秒级（见下），同秒同 Key 同模型的并发请求被全列覆盖压成 1 行——生产实测丢率恰为 (n−1)/n（窗口 13.5%），被覆盖行的 tokens/cost 从求和中整体消失。原设计"唯一键不含 `logid`、以聚合可接受为前提"的取舍**已被 issue #1417 推翻**；含 `logid` 后并发请求各自成行 |
 | `logid=0` 的行 | `0` 参与键比较 → 退化为旧四元组语义（同秒并发仍互相覆盖）。bfe 侧已保证非 0；本模块以 `LOGID_EMPTY` 计数暴露这类行（正常应为 0） |
-| 零值规则 | 字符串空串 → NULL；数值/布尔原样（`ai_stream=0`、`ai_retry_count=0`）；`logid` 恒写整数、不写 NULL（列已 `NOT NULL DEFAULT 0`）；nil/空 JSON → NULL |
+| 零值规则 | 字符串空串 → NULL；数值/布尔原样（`ai_stream=0`、`ai_retry_count=0`）；`logid` 恒写整数、不写 NULL（列已 `NOT NULL DEFAULT 0`）；nil/空 JSON → NULL；可空信号列（`ai_intent_confidence`/`ai_intent_latency_us`/`ai_intent_cache_hit`/`ai_price_miss`/`ai_price_warn`）按 proto optional 指针判存在，未设置 → NULL（≠0/空串） |
 | 范围归一化 | 17 个数值列按 DDL 列类型声明写入上限（`INT` 2147483647、`res_status_code` SMALLINT 32767、`backend_retry` TINYINT 127），超界值写入前 clamp 到列上限并计数 `VALUE_NORMALIZED`（issue #12：pb `uint32` 值域大于 DDL 列类型，原样写入触发 MySQL 1264 毒化整批） |
 | 时间列 | `log_time` 由 pb `timestamp`（Unix 秒）写时转 DATETIME（Doris 链路为 Routine Load `FROM_UNIXTIME`，同口径） |
 | 标签打平 | `levelNName/levelN` 写时从 `ai_apikeytags` 对象打平；无标签 → NULL |
@@ -102,7 +102,7 @@ UP ──(写重试耗尽 / 探活失败)──► markDown ──► DOWN ─�
 
 ### 4.3 表结构（归 ai-gateway-api 仓库持有）
 
-`bfe_ai_request_log` 99 列，与 Doris 同名同列；两侧差异：复合列类型（`ARRAY<STRUCT>` → `JSON`，共 7 个 JSON 列）与**唯一键**（本侧含请求级判别列 `logid`，Doris 侧仍是四元组、待同改，issue #1417）。**DDL 权威文件在 ai-gateway-api 仓库 `db_ddl_report_mysql.sql`**（与聚合表 `bfe_ai_metrics_1m` 同文件），归属理由：
+`bfe_ai_request_log` 101 列，与 Doris 同名同列（Doris 侧仍 99 列，`ai_price_miss`/`ai_price_warn` 待其加列）；两侧差异：复合列类型（`ARRAY<STRUCT>` → `JSON`，共 7 个 JSON 列）与**唯一键**（本侧含请求级判别列 `logid`，Doris 侧仍是四元组、待同改，issue #1417）。**DDL 权威文件在 ai-gateway-api 仓库 `db_ddl_report_mysql.sql`**（与聚合表 `bfe_ai_metrics_1m` 同文件），归属理由：
 
 1. ai-gateway-api 依赖面最广：聚合 JOB 按列取数、分区管理 JOB 执行 `ALTER TABLE`、明细查询，且运行时持有 DDL 权限；本模块仅按固定列清单 INSERT，账号无 DDL 权限；
 2. ai-gateway-api 是代码库中唯一有 MySQL DDL 管理传统的仓库（`db_ddl.sql` 体系），两表与其同发布、同演进；
@@ -180,7 +180,7 @@ UP ──(写重试耗尽 / 探活失败)──► markDown ──► DOWN ─�
 | 文件 | 内容 |
 |------|------|
 | `reader_modules/mod_log_mysql/mod_log_mysql.go` | ModuleLogMysql：接口实现、Init（尽力建连、连通性错误非致命）、Update/Close（含 `LOGID_EMPTY` 计数）、监控注册 |
-| `reader_modules/mod_log_mysql/field_mapper.go` | 99 列固定列序行组装、零值规则、标签打平、JSON marshal |
+| `reader_modules/mod_log_mysql/field_mapper.go` | 101 列固定列序行组装、零值规则、标签打平、JSON marshal |
 | `reader_modules/mod_log_mysql/record_writer.go` | 缓冲队列、攒批、事务批插（超时约束）、退避重试、连接状态机（connSupervisor/markDown/epoch connCh/持有补写）、drain |
 | `reader_modules/mod_log_mysql/conf_mod_log_mysql.go` | INI 配置解析与校验 |
 | `reader_modules/mod_fields/` | 公共字段抽取包（自 mod_kafka 上移，两模块共用） |

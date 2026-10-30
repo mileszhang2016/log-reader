@@ -65,18 +65,18 @@ func makeBfeLog() *bfe_access_pb.BfeLog {
 				{Tagname: strPtr("dep"), Tagvalue: strPtr("ops"), Taglevel: int32Ptr(1)},
 				{Tagname: strPtr("team"), Tagvalue: strPtr("bfe"), Taglevel: int32Ptr(2)},
 			},
-			AiRequestedModel:   strPtr("test-model"),
-			AiTargetModel:      strPtr("gpt-5"),
-			AiStream:           boolPtr(false),
-			AiInputTokens:      int64Ptr(34),
-			AiOutputTokens:     int64Ptr(182),
-			AiTotalTokens:      int64Ptr(216),
-			AiTtftUs:           int64Ptr(5486),
-			AiTpotUs:           int64Ptr(3),
-			AiProvider:         strPtr("openai"),
-			AiRetryCount:       uint32Ptr(1),
-			AiCostValue:        int64Ptr(5000),
-			AiCostCurrency:     strPtr("USD"),
+			AiRequestedModel: strPtr("test-model"),
+			AiTargetModel:    strPtr("gpt-5"),
+			AiStream:         boolPtr(false),
+			AiInputTokens:    int64Ptr(34),
+			AiOutputTokens:   int64Ptr(182),
+			AiTotalTokens:    int64Ptr(216),
+			AiTtftUs:         int64Ptr(5486),
+			AiTpotUs:         int64Ptr(3),
+			AiProvider:       strPtr("openai"),
+			AiRetryCount:     uint32Ptr(1),
+			AiCostValue:      int64Ptr(5000),
+			AiCostCurrency:   strPtr("USD"),
 			AiRouteRuleHits: []*bfe_access_pb.AIRouteRuleHit{
 				{
 					RuleOwner:     strPtr("ak_user_a"),
@@ -118,8 +118,8 @@ func float64Ptr(v float64) *float64 {
 
 func TestFieldRegistry_DefaultFieldsCount(t *testing.T) {
 	def := DefaultFields()
-	if len(def) != 92 {
-		t.Fatalf("expected 92 default fields, got %d: %v", len(def), def)
+	if len(def) != 94 {
+		t.Fatalf("expected 94 default fields, got %d: %v", len(def), def)
 	}
 }
 
@@ -152,6 +152,7 @@ func TestFieldRegistry_DefaultFieldsAlignedWithMysqlWriter(t *testing.T) {
 		"ai_cache_status", "mirror_hit", "mirror_cluster",
 		"ai_intent_question", "ai_intent_answer", "ai_intent_confidence", "ai_intent_source",
 		"ai_intent_latency_us", "ai_intent_cache_hit", "ai_intent_questions_version",
+		"ai_price_miss", "ai_price_warn",
 		"timestamp", "ai_apikeytags",
 	}
 	def := map[string]bool{}
@@ -178,8 +179,8 @@ func TestFieldRegistry_RequiredFieldsCount(t *testing.T) {
 
 func TestFieldRegistry_AllFieldsCount(t *testing.T) {
 	all := AllFields()
-	if len(all) != 92 {
-		t.Fatalf("expected 92 fields, got %d", len(all))
+	if len(all) != 94 {
+		t.Fatalf("expected 94 fields, got %d", len(all))
 	}
 }
 
@@ -188,16 +189,16 @@ func TestFieldRegistry_AllFieldsCount(t *testing.T) {
 // with the expected type and Default membership.
 func TestFieldRegistry_CacheMirrorIntentFields(t *testing.T) {
 	want := map[string]string{
-		"ai_cache_status":           "string",
-		"ai_intent_question":        "string",
-		"ai_intent_answer":          "string",
-		"ai_intent_confidence":      "float64",
-		"ai_intent_source":          "string",
-		"ai_intent_latency_us":      "int64",
-		"ai_intent_cache_hit":       "bool",
+		"ai_cache_status":             "string",
+		"ai_intent_question":          "string",
+		"ai_intent_answer":            "string",
+		"ai_intent_confidence":        "float64",
+		"ai_intent_source":            "string",
+		"ai_intent_latency_us":        "int64",
+		"ai_intent_cache_hit":         "bool",
 		"ai_intent_questions_version": "string",
-		"mirror_hit":                "bool",
-		"mirror_cluster":            "string",
+		"mirror_hit":                  "bool",
+		"mirror_cluster":              "string",
 	}
 
 	defs := make(map[string]FieldDef)
@@ -218,6 +219,46 @@ func TestFieldRegistry_CacheMirrorIntentFields(t *testing.T) {
 		}
 		if !d.Default {
 			t.Errorf("field %s should be in default set", name)
+		}
+	}
+}
+
+// TestFieldRegistry_PriceMissFields asserts the missing-price signal fields
+// (issue #1479, bfe-access-pb v0.3.17 fields 763/766) are registered with the
+// expected type/default membership so they reach both mod_log_mysql and the
+// Kafka default output.
+func TestFieldRegistry_PriceMissFields(t *testing.T) {
+	want := map[string]string{
+		"ai_price_miss": "bool",
+		"ai_price_warn": "string",
+	}
+	defs := make(map[string]FieldDef)
+	for _, d := range AllFields() {
+		defs[d.Name] = d
+	}
+	for name, typ := range want {
+		d, ok := defs[name]
+		if !ok {
+			t.Errorf("field %s should be registered", name)
+			continue
+		}
+		if d.Type != typ {
+			t.Errorf("field %s type = %s, want %s", name, d.Type, typ)
+		}
+		if d.Required {
+			t.Errorf("field %s should not be required", name)
+		}
+		if !d.Default {
+			t.Errorf("field %s must be in the default set (Kafka output)", name)
+		}
+	}
+	for _, name := range []string{"ai_price_miss", "ai_price_warn"} {
+		val, isZero := Extract(name, &bfe_access_pb.BfeLog{})
+		if !isZero {
+			t.Errorf("%s should be zero when unset", name)
+		}
+		if val != nil {
+			t.Errorf("%s = %v when unset, want nil (JSON null / MySQL NULL)", name, val)
 		}
 	}
 }

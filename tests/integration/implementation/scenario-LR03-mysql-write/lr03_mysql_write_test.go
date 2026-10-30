@@ -173,6 +173,8 @@ type requestLogRow struct {
 	aiIntentLatencyUs        sql.NullInt64
 	aiIntentCacheHit         sql.NullInt64
 	aiIntentQuestionsVersion string
+	aiPriceMiss              sql.NullInt64
+	aiPriceWarn              sql.NullString
 	logTime                  time.Time
 }
 
@@ -190,6 +192,7 @@ func (e *testEnv) queryRowByLogid(logid uint64) *requestLogRow {
 			ai_cache_status, mirror_hit, mirror_cluster,
 			ai_intent_question, ai_intent_answer, ai_intent_confidence, ai_intent_source,
 			ai_intent_latency_us, ai_intent_cache_hit, ai_intent_questions_version,
+			ai_price_miss, ai_price_warn,
 			log_time
 		FROM `+tableName+` WHERE logid = ?`, logid).Scan(
 		&r.logid, &r.product, &r.logTag, &r.errCode, &r.errMsg, &r.protoCol, &r.headerHost, &r.originURI,
@@ -201,6 +204,7 @@ func (e *testEnv) queryRowByLogid(logid uint64) *requestLogRow {
 		&r.aiCacheStatus, &r.mirrorHit, &r.mirrorCluster,
 		&r.aiIntentQuestion, &r.aiIntentAnswer, &r.aiIntentConfidence, &r.aiIntentSource,
 		&r.aiIntentLatencyUs, &r.aiIntentCacheHit, &r.aiIntentQuestionsVersion,
+		&r.aiPriceMiss, &r.aiPriceWarn,
 		&r.logTime)
 	if err != nil {
 		e.dumpLogs()
@@ -663,6 +667,62 @@ func TestLR03_NewFieldsWriteAndZeroRules(t *testing.T) {
 	assertNullFloat(t, er.aiIntentConfidence, "ai_intent_confidence", 0)
 	assertNullInt(t, er.aiIntentLatencyUs, "ai_intent_latency_us", 0)
 	assertNullInt(t, er.aiIntentCacheHit, "ai_intent_cache_hit", 0)
+}
+
+// TestLR03_PriceMissColumns (TC-08) verifies the missing-price signal columns
+// added for bfenetworks/bfe#1479: a request billed through a price fallback or
+// refused for a missing price carries ai_price_miss / ai_price_warn; an unset
+// pair is written as NULL so reports cannot read "not applicable" as "billed
+// wrong"; and an explicit false stays distinguishable from NULL.
+func TestLR03_PriceMissColumns(t *testing.T) {
+	e := newTestEnv(t)
+	defer e.Close()
+
+	// Part 1: fallback — a non-chat interface billed at the model's chat price.
+	fallback := common.MakeRequestLog(83001, bfe_access_pb.ProductID_BFE,
+		"price.example.org", "/v1/embeddings", "price-fallback-model")
+	fallback.RequestLog.AiPriceMiss = proto.Bool(true)
+	fallback.RequestLog.AiPriceWarn = proto.String("fallback")
+	e.logGen.MustWriteBfeLog(t, fallback)
+
+	// Part 2: reject — bfe refuses before forwarding, so the row is non-2xx but
+	// still carries the signal (bfe writes it per request, not per usage).
+	reject := common.MakeRequestLog(83002, bfe_access_pb.ProductID_BFE,
+		"price.example.org", "/v1/images/generations", "price-reject-model")
+	reject.RequestLog.AiPriceMiss = proto.Bool(true)
+	reject.RequestLog.AiPriceWarn = proto.String("reject")
+	reject.RequestLog.ResStatusCode = proto.Uint32(503)
+	e.logGen.MustWriteBfeLog(t, reject)
+
+	// Part 3: priced normally -> both columns NULL.
+	clean := common.MakeRequestLog(83003, bfe_access_pb.ProductID_BFE,
+		"price.example.org", "/v1/chat/completions", "price-clean-model")
+	e.logGen.MustWriteBfeLog(t, clean)
+
+	// Part 4: explicit false -> 0, distinct from NULL.
+	explicit := common.MakeRequestLog(83004, bfe_access_pb.ProductID_BFE,
+		"price.example.org", "/v1/chat/completions", "price-explicit-model")
+	explicit.RequestLog.AiPriceMiss = proto.Bool(false)
+	e.logGen.MustWriteBfeLog(t, explicit)
+
+	e.waitRows(4, 20*time.Second)
+
+	fr := e.queryRowByLogid(83001)
+	assertNullInt(t, fr.aiPriceMiss, "ai_price_miss", 1)
+	assertNullString(t, fr.aiPriceWarn, "ai_price_warn", "fallback")
+
+	rr := e.queryRowByLogid(83002)
+	assertNullInt(t, rr.resStatusCode, "res_status_code", 503)
+	assertNullInt(t, rr.aiPriceMiss, "ai_price_miss", 1)
+	assertNullString(t, rr.aiPriceWarn, "ai_price_warn", "reject")
+
+	cr := e.queryRowByLogid(83003)
+	assertNull(t, cr.aiPriceMiss.Valid, "ai_price_miss")
+	assertNull(t, cr.aiPriceWarn.Valid, "ai_price_warn")
+
+	er := e.queryRowByLogid(83004)
+	assertNullInt(t, er.aiPriceMiss, "ai_price_miss", 0)
+	assertNull(t, er.aiPriceWarn.Valid, "ai_price_warn")
 }
 
 // TestLR03_ConcurrentRowsSameSecondSurvive (bfenetworks/bfe#1417) verifies the

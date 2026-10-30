@@ -68,7 +68,7 @@ Modules = mod_log_mysql
 
 ## 输出列
 
-`bfe_ai_request_log` 共 99 列，与 Doris 明细表**同名同列**（差异仅 `ARRAY<STRUCT>` 列在本表为 `JSON` 类型）。完整列清单（含类型、来源、零值规则、JSON 结构）参见 [output-columns.md](./output-columns.md)。
+`bfe_ai_request_log` 共 101 列，与 Doris 明细表**同名同列**（差异仅 `ARRAY<STRUCT>` 列在本表为 `JSON` 类型）。完整列清单（含类型、来源、零值规则、JSON 结构）参见 [output-columns.md](./output-columns.md)。
 
 | 列类别 | 主要列 |
 | ------ | ------ |
@@ -83,11 +83,12 @@ Modules = mod_log_mysql
 | AI 可观测（标量） | `ai_target_model`、`ai_stream`、`ai_input_tokens`、`ai_output_tokens`、`ai_total_tokens`、`ai_cache_read_tokens`、`ai_cache_write_tokens`、`ai_audio_input_tokens`、`ai_audio_output_tokens`、`ai_image_count`、`ai_ttft_us`、`ai_tpot_us`、`ai_provider`、`ai_protocol`、`ai_mode`、`ai_retry_count`、`ai_cost_value`、`ai_cost_currency`、`ai_auth_reject_reason` |
 | AI 可观测（JSON） | `ai_route_rule_hits`、`ai_cluster_key_names`、`ai_rate_limit_hits`、`ai_auth_reject_quota_plans`、`ai_auth_hit_quota_plans` |
 | AI 缓存/镜像/意图 | `ai_cache_status`、`mirror_hit`、`mirror_cluster`、`ai_intent_question`、`ai_intent_answer`、`ai_intent_confidence`、`ai_intent_source`、`ai_intent_latency_us`、`ai_intent_cache_hit`、`ai_intent_questions_version` |
+| 缺价信号 | `ai_price_miss`、`ai_price_warn`（2026-10-30 加列，bfenetworks/bfe#1479；NULL=未发生缺价） |
 
 ## 写入语义要点
 
 - **幂等**：唯一键 `(hostid, log_time, ai_apikey_id, ai_requested_model, logid)`，冲突覆盖更新——只有**同一请求重放**（同 `logid`）才命中覆盖，故 log-reader 重启补读（`-b`）或重发不会产生重复行；同秒同 Key 同模型的并发请求各自成行（bfenetworks/bfe#1417 修复前唯一键缺 `logid`，这类请求会互相覆盖、丢 (n−1)/n 行）；
-- **零值规则**：可空字符串空串写 `NULL`（下游聚合 `IFNULL/COALESCE` 归一，与 Doris 口径一致）；NOT NULL 字符串列（AI 缓存/镜像/意图段字符串列）空串原样写 `''`；数值/布尔原样写入；空 JSON 值写 `NULL`；`ai_intent_confidence`/`ai_intent_latency_us`/`ai_intent_cache_hit` 三个可空意图数值列为 proto optional，未设置（指针 nil）写 `NULL`（=未求值），显式置 0 写 0（与 report 查询契约一致）；
+- **零值规则**：可空字符串空串写 `NULL`（下游聚合 `IFNULL/COALESCE` 归一，与 Doris 口径一致）；NOT NULL 字符串列（AI 缓存/镜像/意图段字符串列）空串原样写 `''`；数值/布尔原样写入；空 JSON 值写 `NULL`；`ai_intent_confidence`/`ai_intent_latency_us`/`ai_intent_cache_hit` 三个可空意图数值列为 proto optional，未设置（指针 nil）写 `NULL`（=未求值），显式置 0 写 0（与 report 查询契约一致）；`ai_price_miss`/`ai_price_warn` 两个缺价信号列同样按 proto 指针判存在，未设置写 `NULL`（=本次请求未发生缺价），**不可折叠为 0/空串**；
 - **标签打平**：`levelNName/levelN` 在写入时由 `ai_apikeytags` 打平，不等价于 Doris 侧由 Routine Load 表达式打平，效果一致；
 - **范围归一化**：17 个数值列按 DDL 列类型声明写入上限（`INT` 2147483647、`res_status_code` SMALLINT 32767、`backend_retry` TINYINT 127），超界值写入前 clamp 到列上限并计数 `VALUE_NORMALIZED`（issue #12：pb `uint32` 值域大于列类型，原样写入会触发 MySQL 1264 使整批失败）；
 - **行级隔离**：批写入命中可定位到行的数据错误（1264/1406 + `at row N`）时剔除该行、立即重写剩余行（不占退避重试次数、不断连），计数 `ROW_DROPPED_DATA`——单行异常不再毒化整批（issue #12）；
@@ -125,10 +126,11 @@ Modules = mod_log_mysql
 
 ## 与 mod_kafka 的关系
 
-两个模块共用 `reader_modules/mod_fields` 的字段抽取与类型转换逻辑（IP 转点分、`backend_info` 拼 `IP:Port`、apikeytags 打平、hostid 注入等）：mod_kafka 在其上做 `json.Marshal`，mod_log_mysql 在其上做行数组组装（其中三个可空意图数值列按 proto optional 指针判空直接取 RequestLog 字段）。`FieldMode/FieldNames` 字段裁剪配置仅属于 mod_kafka；mod_log_mysql 始终写全量 99 列。
+两个模块共用 `reader_modules/mod_fields` 的字段抽取与类型转换逻辑（IP 转点分、`backend_info` 拼 `IP:Port`、apikeytags 打平、hostid 注入等）：mod_kafka 在其上做 `json.Marshal`，mod_log_mysql 在其上做行数组组装（其中三个可空意图数值列与两个缺价信号列按 proto optional 指针判空直接取 RequestLog 字段）。`FieldMode/FieldNames` 字段裁剪配置仅属于 mod_kafka；mod_log_mysql 始终写全量 101 列。
 
 **对齐性约定**（2026-10-01 起，见 `doc/modifications/2026-10-01-align-mod-kafka-output-with-mod-log-mysql/`）：
 
 - mod_kafka 的 Default 输出字段集（`FieldMode=default`）= mod_log_mysql 的写入字段集（88 个直接字段 + `timestamp`/`ai_apikeytags` 两个派生源；`log_time`、`level1Name~level5` 为两侧各自派生，不单独输出）；
 - `ai_intent_confidence` / `ai_intent_latency_us` / `ai_intent_cache_hit` 三个 proto optional 列：未设置时两侧均为空值（MySQL NULL / Kafka JSON `null`），可区分"未求值"与"显式置零"；
+- `ai_price_miss` / `ai_price_warn`（bfenetworks/bfe#1479）：同款 proto optional 语义，未设置时 MySQL 写 NULL、Kafka 输出 `null`（不是 `0`/`""`）；`ai_price_miss` 显式 `false` 在两侧都写成 `0`，与 NULL 可区分；
 - 新增报表字段必须两侧同 PR 落地（注册表 Default + `columnDefs` 列 + 消费侧 DDL），并以 `field_registry_test.go` 的 `TestFieldRegistry_DefaultFieldsAlignedWithMysqlWriter` 锁定对齐关系。

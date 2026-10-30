@@ -170,6 +170,8 @@
 | `ai_intent_questions_version` | string | ❌ | ✅ | 意图问题集版本 |
 | `mirror_hit` | bool | ❌ | ✅ | 请求是否命中流量镜像 |
 | `mirror_cluster` | string | ❌ | ✅ | 流量镜像目标集群名，未命中镜像时为空串 |
+| `ai_price_miss` | bool | ❌ | ✅ | 本次请求是否发生缺价回退（计价缺失导致费用不能按原接口定价核算）；proto optional，**未设置输出 null**（= 未发生，与 MySQL 侧 NULL 语义一致）。`reject` 形态下请求在转发前被拒，行上同样带 `true` |
+| `ai_price_warn` | string | ❌ | ✅ | 缺价形态（bfenetworks/bfe#1479，六取值取最具体的一个）：`fallback` / `subitem_missing` / `no_entry` / `no_baseline` / `no_model_table` / `reject`；proto optional，**未设置输出 null** |
 
 ### 3.12. 地址信息字段（从 ConnAddrInfo 展平）
 
@@ -197,9 +199,9 @@
 | 响应信息 | 6 | 3 | 6 |
 | 响应头列表 | 1 | 0 | 1 |
 | 时间信息 | 8 | 6 | 8 |
-| AI 可观测 | 39 | 0 | 39 |
+| AI 可观测 | 41 | 0 | 41 |
 | 地址信息 | 5 | 0 | 5 |
-| **总计** | **92** | **22** | **92** |
+| **总计** | **94** | **22** | **94** |
 
 > Default 集 = 全部注册字段（2026-10-01 起）：`FieldMode=default` 的输出字段集与
 > `mod_log_mysql` 的写入字段集（派生列除外）完全对齐，见

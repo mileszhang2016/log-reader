@@ -74,7 +74,7 @@ log-reader 侧的改动必须在 `log-reader/doc/modifications/` 留下修改说
 
 关键约束（写文档与改代码都要遵守）：
 
-- `mod_log_mysql` 的 **99 列清单与列序唯一权威**是 `reader_modules/mod_log_mysql/field_mapper.go` 的 `columnDefs`，列序必须与 `ai-gateway-api` 仓库 `db_ddl_report_mysql.sql` 的 `CREATE TABLE` 列序一致；
+- `mod_log_mysql` 的**列清单与列序唯一权威**是 `reader_modules/mod_log_mysql/field_mapper.go` 的 `columnDefs`，列序必须与 `ai-gateway-api` 仓库 `db_ddl_report_mysql.sql` 的 `CREATE TABLE` 列序一致（列数以权威 DDL 为准，勿在文档中写死）；
 - 零值规则：`kindScalar` 字符串零值写 `NULL`、数值原样；`kindNotNullStr` 空串原样写入；`kindOptionalNum` proto 未设置写 `NULL`——文档表述须与之一致；
 - 写入语句、覆盖子句由 `Columns()` 动态生成，唯一键不编码在任何 Go 代码中。
 
